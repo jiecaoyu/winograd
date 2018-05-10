@@ -12,6 +12,21 @@ import models
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
+
+def load_state(model, state_dict):
+    param_dict = dict(model.named_parameters())
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key])
+        elif key.replace('module.','') in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key.replace('module.','')])
+        elif 'module.'+key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict['module.'+key])
+    
+    return
+
 def save_state(model, acc):
     print('==> Saving model ...')
     state = {
@@ -22,11 +37,7 @@ def save_state(model, acc):
         if 'module' in key:
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
-    if args.prune == 'node':
-        torch.save(state, 'saved_models/'+args.arch+'.prune.'+\
-                args.prune+'.'+str(args.stage)+'.pth.tar')
-    else:
-        torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
+    torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
 
 def train(epoch):
     model.train()
@@ -39,12 +50,10 @@ def train(epoch):
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
-        if args.prune == 'node':
-            beta_penalty_op.penalize()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.data[0]))
+                100. * batch_idx / len(train_loader), loss.data.item()))
     return
 
 def test(evaluate=False):
@@ -56,14 +65,14 @@ def test(evaluate=False):
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
+        data, target = Variable(data, requires_grad=False), Variable(target)
         output = model(data)
-        test_loss += criterion(output, target).data[0]
+        test_loss += criterion(output, target).data.item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
     
-    acc = 100. * correct / len(test_loader.dataset)
-    if ((args.prune == 'node') and (not args.retrain)) or (acc > best_acc):
+    acc = 100. * float(correct) / len(test_loader.dataset)
+    if (acc > best_acc):
         best_acc = acc
         if not evaluate:
             save_state(model, best_acc)
@@ -71,7 +80,7 @@ def test(evaluate=False):
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss * args.batch_size, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+        100. * float(correct) / len(test_loader.dataset)))
     print('Best Accuracy: {:.2f}%\n'.format(best_acc))
     return
 
@@ -80,15 +89,7 @@ def adjust_learning_rate(optimizer, epoch):
     lr = args.lr * (0.1 ** (epoch // args.lr_epochs))
     print('Learning rate:', lr)
     for param_group in optimizer.param_groups:
-        if args.retrain and ('mask' in param_group['key']): # retraining
-            param_group['lr'] = 0.0
-        elif args.prune_target and ('mask' in param_group['key']):
-            if args.prune_target in param_group['key']:
-                param_group['lr'] = lr
-            else:
-                param_group['lr'] = 0.0
-        else:
-            param_group['lr'] = lr
+        param_group['lr'] = lr
     return lr
 
 if __name__=='__main__':
@@ -120,23 +121,8 @@ if __name__=='__main__':
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
-    parser.add_argument('--retrain', action='store_true', default=False,
-            help='retrain the pruned network')
-    parser.add_argument('--prune', action='store', default=None,
-            help='pruning mechanism: node')
-    parser.add_argument('--prune-target', action='store', default=None,
-            help='pruning target: default=None | conv | ip')
-    parser.add_argument('--stage', action='store', type=int, default=0,
-            help='pruning stage')
-    parser.add_argument('--penalty', action='store', default=0.0,
-            help='beta penalty')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    # check options
-    if not (args.prune_target in [None, 'conv', 'ip']):
-        print('ERROR: Please choose the correct prune_target')
-        exit()
 
     print(args)
     
@@ -162,7 +148,7 @@ if __name__=='__main__':
     
     # generate the model
     if args.arch == 'LeNet_5':
-        model = models.LeNet_5(args.prune)
+        model = models.LeNet_5()
     else:
         print('ERROR: specified arch is not suppported')
         exit()
@@ -201,27 +187,10 @@ if __name__=='__main__':
     criterion = nn.CrossEntropyLoss()
 
     if args.evaluate:
-        print_layer_info(model)
         test(evaluate=True)
         exit()
 
-    if args.prune == 'node':
-        print('==> Start node pruning ...')
-        beta_penalty_op = beta_penalty(model, args.penalty, args.lr, args.prune_target)
-        if not args.pretrained:
-            print('==> ERROR: Please assign the pretrained model')
-            exit()
-        for epoch in range(1, args.epochs + 1):
-            lr = adjust_learning_rate(optimizer, epoch)
-            if args.retrain:
-                beta_penalty_op.update_learning_rate(0.0)
-            else:
-                beta_penalty_op.update_learning_rate(lr)
-            train(epoch)
-            print_layer_info(model)
-            test()
-    else:
-        for epoch in range(1, args.epochs + 1):
-            adjust_learning_rate(optimizer, epoch)
-            train(epoch)
-            test()
+    for epoch in range(1, args.epochs + 1):
+        adjust_learning_rate(optimizer, epoch)
+        train(epoch)
+        test()
