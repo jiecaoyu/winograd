@@ -44,7 +44,7 @@ KernelSize2InputTileSize = {
 
 class Winograd2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-            initialize_std = 0.01):
+            initialize_std = 0.05):
         super(Winograd2d, self).__init__()
         assert(stride == 1, 'Only stride = 1 is supported')
         assert(kernel_size == 5, 'Only kernel_size = 5 is supported')

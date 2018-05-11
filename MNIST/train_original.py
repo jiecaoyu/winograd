@@ -116,7 +116,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default='LeNet_5',
-            help='the MNIST network structure: LeNet_5')
+            help='the MNIST network structure: LeNet_5 | LeNet_5_3x3')
     parser.add_argument('--pretrained', action='store', default=None,
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -149,6 +149,8 @@ if __name__=='__main__':
     # generate the model
     if args.arch == 'LeNet_5':
         model = models.LeNet_5()
+    elif args.arch == 'LeNet_5_3x3':
+        model = models.LeNet_5_3x3()
     else:
         print('ERROR: specified arch is not suppported')
         exit()
