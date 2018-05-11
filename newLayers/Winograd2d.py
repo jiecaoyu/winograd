@@ -43,7 +43,8 @@ KernelSize2InputTileSize = {
         }
 
 class Winograd2d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+            initialize_std = 0.01):
         super(Winograd2d, self).__init__()
         assert(stride == 1, 'Only stride = 1 is supported')
         assert(kernel_size == 5, 'Only kernel_size = 5 is supported')
@@ -60,6 +61,22 @@ class Winograd2d(nn.Module):
         # self.register_buffer('G', torch.from_numpy(G_4x4_5x5).float())
         self.register_buffer('BT', torch.from_numpy(BT_4x4_5x5).float())
         self.register_buffer('AT', torch.from_numpy(AT_4x4_5x5).float())
+
+        # initialization
+        weight_normal = torch.zeros([out_channels, in_channels, kernel_size, kernel_size],
+                dtype=torch.float32).normal_(0, initialize_std)
+        print(weight_normal.shape)
+        weight_t = weight_normal.view(out_channels * in_channels,
+                kernel_size, kernel_size)
+        G = torch.from_numpy(G_4x4_5x5).float()
+        weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                weight_t)
+        GT = G.transpose(0, 1)
+        weight_t = torch.bmm(weight_t,
+                GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+        weight_t = weight_t.view(out_channels, in_channels, 8, 8)
+        self.weight.data.copy_(weight_t)
+        del weight_normal, weight_t
         return
 
     def forward(self, x):
