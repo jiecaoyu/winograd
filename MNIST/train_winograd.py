@@ -12,6 +12,7 @@ import models
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 from newLayers import *
+from utils import *
 
 
 def load_state_normal(model, state_dict):
@@ -37,7 +38,7 @@ def load_state_normal(model, state_dict):
                     weight_t = weight_t.view(weight.shape[0], weight.shape[1], 8, 8)
                     cur_state_dict[key].copy_(weight_t)
                 else:
-                    raise Exception ('Kernel size of' + str(kernel_size) + "is not supported.")
+                    raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
             else:
                 cur_state_dict[key].copy_(state_dict[key])
         elif key.replace('module.','') in state_dict_keys:
@@ -57,6 +58,7 @@ def train(epoch):
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
+        grad_optimizer.step()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -113,8 +115,8 @@ if __name__=='__main__':
             help='learning rate (default: 0.1)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
-            metavar='W', help='weight decay (default: 1e-4)')
+    parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
+            metavar='W', help='weight decay (default: 1e-3)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -186,6 +188,7 @@ if __name__=='__main__':
 
     criterion = nn.CrossEntropyLoss()
 
+    grad_optimizer = GradOptimizer(model)
     if args.evaluate:
         test(evaluate=True)
         exit()

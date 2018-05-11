@@ -65,7 +65,6 @@ class Winograd2d(nn.Module):
         # initialization
         weight_normal = torch.zeros([out_channels, in_channels, kernel_size, kernel_size],
                 dtype=torch.float32).normal_(0, initialize_std)
-        print(weight_normal.shape)
         weight_t = weight_normal.view(out_channels * in_channels,
                 kernel_size, kernel_size)
         G = torch.from_numpy(G_4x4_5x5).float()
