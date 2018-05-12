@@ -24,21 +24,26 @@ def load_state_normal(model, state_dict):
             if ('conv' in key) and ('weight' in key):
                 kernel_size = state_dict[key].shape[3]
                 if kernel_size == 5:
-                    weight = state_dict[key]
-                    weight_t = weight.view(weight.shape[0] * weight.shape[1],
-                            kernel_size, kernel_size)
                     G = torch.from_numpy(G_4x4_5x5).float()
-                    if weight.is_cuda:
-                        G = G.cuda()
-                    weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
-                            weight_t)
-                    GT = G.transpose(0, 1)
-                    weight_t = torch.bmm(weight_t,
-                            GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
-                    weight_t = weight_t.view(weight.shape[0], weight.shape[1], 8, 8)
-                    cur_state_dict[key].copy_(weight_t)
+                    BT = torch.from_numpy(BT_4x4_5x5).float()
+                elif kernel_size == 3:
+                    G = torch.from_numpy(G_4x4_3x3).float()
+                    BT = torch.from_numpy(BT_4x4_3x3).float()
                 else:
                     raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
+                weight = state_dict[key]
+                weight_t = weight.view(weight.shape[0] * weight.shape[1],
+                        kernel_size, kernel_size)
+                if weight.is_cuda:
+                    G = G.cuda()
+                weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                        weight_t)
+                GT = G.transpose(0, 1)
+                weight_t = torch.bmm(weight_t,
+                        GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+                weight_t = weight_t.view(weight.shape[0], weight.shape[1],
+                        BT.shape[0], BT.shape[1])
+                cur_state_dict[key].copy_(weight_t)
             else:
                 cur_state_dict[key].copy_(state_dict[key])
         elif key.replace('module.','') in state_dict_keys:
@@ -124,7 +129,7 @@ if __name__=='__main__':
     parser.add_argument('--log-interval', type=int, default=100, metavar='N',
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default='LeNet_5',
-            help='the MNIST network structure: LeNet_5')
+            help='the MNIST network structure: LeNet_5 | LeNet_5_3x3')
     parser.add_argument('--pretrained_normal', action='store', default=None,
             help='pretrained_normal model')
     parser.add_argument('--evaluate', action='store_true', default=False,
@@ -157,6 +162,8 @@ if __name__=='__main__':
     # generate the model
     if args.arch == 'LeNet_5':
         model = models.LeNet_5_Winograd()
+    elif args.arch == 'LeNet_5_3x3':
+        model = models.LeNet_5_3x3_Winograd()
     else:
         print('ERROR: specified arch is not suppported')
         exit()
@@ -174,8 +181,6 @@ if __name__=='__main__':
     print(model)
     param_dict = dict(model.named_parameters())
     params = []
-    
-    base_lr = 0.1
     
     for key, value in param_dict.items():
         params += [{'params':[value], 'lr': args.lr,
