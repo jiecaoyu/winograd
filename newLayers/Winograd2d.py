@@ -4,6 +4,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch
 import numpy
+import math
 
 
 # set the kernels
@@ -105,8 +106,10 @@ class Winograd2d(nn.Module):
         self.output_tile_size = self.AT.shape[0]
 
         # initialization
+        n = in_channels * kernel_size * kernel_size
+        stdv = 1. / math.sqrt(n)
         weight_normal = torch.zeros([out_channels, in_channels, kernel_size, kernel_size],
-                dtype=torch.float32).normal_(0, initialize_std)
+                dtype=torch.float32).uniform_(-stdv, stdv)
         weight_t = weight_normal.view(out_channels * in_channels,
                 kernel_size, kernel_size)
         weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
@@ -117,6 +120,8 @@ class Winograd2d(nn.Module):
         weight_t = weight_t.view(out_channels, in_channels,
                 BT.shape[0], BT.shape[1])
         self.weight.data.copy_(weight_t)
+
+        self.bias.data.uniform_(-stdv, stdv)
         del weight_normal, weight_t
         return
 
