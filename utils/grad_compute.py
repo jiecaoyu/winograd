@@ -29,9 +29,9 @@ class GradOptimizer():
     def step(self):
         for index in range(len(self.grad_target)):
             if self.kernel_size[index] == 5:
-                G = torch.from_numpy(G_4x4_5x5).float().cuda()
+                G = torch.from_numpy(G_4x4_5x5).float().cuda().mul(180.)
             elif self.kernel_size[index] == 3:
-                G = torch.from_numpy(G_4x4_3x3).float().cuda()
+                G = torch.from_numpy(G_4x4_3x3).float().cuda().mul(24.)
             input_tile_size = self.input_tile_size[index]
             grad_target = self.grad_target[index].grad.data
             GT = G.transpose(0, 1)
@@ -43,5 +43,8 @@ class GradOptimizer():
             grad_target = torch.bmm(grad_target,
                     G.unsqueeze(0).expand(grad_target.size(0), *G.size()))
             grad_target = grad_target.view(s[0],s[1], input_tile_size, input_tile_size)
-            self.grad_target[index].grad.data = grad_target
+            if self.kernel_size[index] == 5:
+                self.grad_target[index].grad.data = grad_target.div(180. ** 4.0)
+            elif self.kernel_size[index] == 3:
+                self.grad_target[index].grad.data = grad_target.div(24. ** 4.0)
         return

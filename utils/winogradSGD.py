@@ -41,7 +41,7 @@ class winogradSGD(Optimizer):
                     continue
                 d_p = p.grad.data
                 if weight_decay != 0:
-                    d_p.add_(weight_decay, p.data)
+                    d_p = d_p.mul(1e6).add(weight_decay * (1e6), p.data).div(1e6)
                 if momentum != 0:
                     param_state = self.state[p]
                     if 'momentum_buffer' not in param_state:
@@ -55,6 +55,6 @@ class winogradSGD(Optimizer):
                     else:
                         d_p = buf
 
-                    p.data.add_(-group['lr'], d_p)
+                p.data.add_(-group['lr'], d_p)
 
         return loss
