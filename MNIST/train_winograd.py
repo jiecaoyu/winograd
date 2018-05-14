@@ -76,12 +76,17 @@ def save_state(model, acc):
         if 'module' in key:
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
-    torch.save(state, 'saved_models/'+args.arch+'.winograd.best_origin.pth.tar')
+    if args.prune:
+        torch.save(state, 'saved_models/'+args.arch+'.winograd.prune.pth.tar')
+    else:
+        torch.save(state, 'saved_models/'+args.arch+'.winograd.best_origin.pth.tar')
     return
 
 def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
+        if args.prune:
+            mask.apply()
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
@@ -103,6 +108,8 @@ def test(evaluate=False):
     test_loss = 0
     correct = 0
 
+    if args.prune:
+        mask.apply()
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -113,7 +120,7 @@ def test(evaluate=False):
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
     
     acc = 100. * float(correct) / len(test_loader.dataset)
-    if (acc > best_acc):
+    if (acc > best_acc) or args.prune:
         best_acc = acc
         if not evaluate:
             save_state(model, best_acc)
@@ -164,6 +171,13 @@ if __name__=='__main__':
             help='pretrained_winograd model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
+
+    parser.add_argument('--prune', action='store_true', default=False,
+            help='enable pruning')
+    parser.add_argument('--threshold', type=float, default=0.0,
+            help='pruning threshold')
+    parser.add_argument('--stage', type=int, default=0,
+            help='pruning stage')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -207,6 +221,8 @@ if __name__=='__main__':
         best_acc = pretrained_model['acc']
         load_state_winograd(model, pretrained_model['state_dict'])
     else:
+        if args.prune:
+            raise Exception ('Pruning requires a pretrained model.')
         best_acc = 0.0
 
     criterion = nn.CrossEntropyLoss()
@@ -234,6 +250,9 @@ if __name__=='__main__':
         test(evaluate=True)
         exit()
 
+    if args.prune:
+        mask = Mask(model, args.threshold)
+        mask.print_info()
     for epoch in range(1, args.epochs + 1):
         adjust_learning_rate(optimizer, epoch)
         train(epoch)
