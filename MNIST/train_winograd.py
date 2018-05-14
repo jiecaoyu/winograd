@@ -50,7 +50,33 @@ def load_state_normal(model, state_dict):
             cur_state_dict[key].copy_(state_dict[key.replace('module.','')])
         elif 'module.'+key in state_dict_keys:
             cur_state_dict[key].copy_(state_dict['module.'+key])
+    return
+
+def load_state_winograd(model, state_dict):
+    param_dict = dict(model.named_parameters())
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key])
+        elif key.replace('module.','') in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key.replace('module.','')])
+        elif 'module.'+key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict['module.'+key])
     
+    return
+
+def save_state(model, acc):
+    print('==> Saving model ...')
+    state = {
+            'acc': acc,
+            'state_dict': model.state_dict(),
+            }
+    for key in state['state_dict'].keys():
+        if 'module' in key:
+            state['state_dict'][key.replace('module.', '')] = \
+                    state['state_dict'].pop(key)
+    torch.save(state, 'saved_models/'+args.arch+'.winograd.best_origin.pth.tar')
     return
 
 def train(epoch):
@@ -89,6 +115,8 @@ def test(evaluate=False):
     acc = 100. * float(correct) / len(test_loader.dataset)
     if (acc > best_acc):
         best_acc = acc
+        if not evaluate:
+            save_state(model, best_acc)
 
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
@@ -132,6 +160,8 @@ if __name__=='__main__':
             help='the MNIST network structure: LeNet_5 | LeNet_5_3x3')
     parser.add_argument('--pretrained_normal', action='store', default=None,
             help='pretrained_normal model')
+    parser.add_argument('--pretrained_winograd', action='store', default=None,
+            help='pretrained_winograd model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
     args = parser.parse_args()
@@ -172,6 +202,10 @@ if __name__=='__main__':
         pretrained_model = torch.load(args.pretrained_normal)
         best_acc = pretrained_model['acc']
         load_state_normal(model, pretrained_model['state_dict'])
+    elif args.pretrained_winograd:
+        pretrained_model = torch.load(args.pretrained_winograd)
+        best_acc = pretrained_model['acc']
+        load_state_winograd(model, pretrained_model['state_dict'])
     else:
         best_acc = 0.0
 
