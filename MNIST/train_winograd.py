@@ -175,8 +175,11 @@ if __name__=='__main__':
     else:
         best_acc = 0.0
 
+    criterion = nn.CrossEntropyLoss()
     if args.cuda:
         model.cuda()
+        model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
+        criterion.cuda()
     
     print(model)
     param_dict = dict(model.named_parameters())
@@ -191,7 +194,6 @@ if __name__=='__main__':
     optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
             weight_decay=args.weight_decay)
 
-    criterion = nn.CrossEntropyLoss()
 
     grad_optimizer = GradOptimizer(model)
     if args.evaluate:
