@@ -191,7 +191,7 @@ if __name__=='__main__':
             'weight_decay': args.weight_decay,
             'key':key}]
     
-    optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
+    optimizer = winogradSGD(params, lr=args.lr, momentum=args.momentum,
             weight_decay=args.weight_decay)
 
 
