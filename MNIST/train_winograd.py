@@ -155,8 +155,8 @@ if __name__=='__main__':
             help='learning rate (default: 0.1)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
-            metavar='W', help='weight decay (default: 1e-3)')
+    parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
+            metavar='W', help='weight decay (default: 1e-4)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
