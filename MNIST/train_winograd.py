@@ -92,6 +92,8 @@ def train(epoch):
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
+        if args.prune:
+            mask.mask_grad()
         grad_optimizer.step()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -244,13 +246,15 @@ if __name__=='__main__':
 
 
     grad_optimizer = GradOptimizer(model)
-    if args.evaluate:
-        test(evaluate=True)
-        exit()
 
     if args.prune:
         mask = Mask(model, args.threshold)
         mask.print_info()
+
+    if args.evaluate:
+        test(evaluate=True)
+        exit()
+
     for epoch in range(1, args.epochs + 1):
         adjust_learning_rate(optimizer, epoch)
         train(epoch)

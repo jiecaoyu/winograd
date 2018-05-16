@@ -1,17 +1,47 @@
 import os
 import sys
+import numpy
+import torch
 from newLayers import *
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
+
+mask_multi_4x4_3x3 = numpy.array([
+    [ 33.2565783 ,   48.74423043,  53.44155686, 133.60389216, 133.60389216, 29.15475947],
+    [ 48.74423043,   65.96969001,  96.16652224, 240.4163056 , 240.4163056 ,48.74423043],
+    [ 53.44155686,   96.16652224,  96.16652224, 240.4163056 , 240.4163056 ,53.44155686],
+    [133.60389216,  240.4163056 , 240.4163056 , 601.04076401, 601.04076401, 133.60389216],
+    [133.60389216,  240.4163056 , 240.4163056 , 601.04076401, 601.04076401, 133.60389216],
+    [ 29.15475947,   48.74423043,  53.44155686, 133.60389216, 133.60389216, 29.15475947]])
+
+mask_multi_4x4_5x5 = numpy.array([
+    [  40.40585122,   67.72947106,   67.70732051,  178.50781233,  178.50781233, 357.01562466 , 357.01562466 ,  40.39347488],
+    [  67.72947106,   68.0661443 ,  113.49063838,  275.45558853,  290.88448094, 550.91117705 , 581.76896187 ,  67.70732051],
+    [  67.70732051,  113.49063838,  113.49063838,  299.2138136 ,  299.2138136 ,598.4276272   ,598.4276272   , 67.70732051],
+    [ 178.50781233,  275.45558853,  299.2138136 ,  774.42329853,  783.69729189, 1548.84659707, 1567.39458378,  178.50781233],
+    [ 178.50781233,  290.88448094,  299.2138136 ,  783.69729189,  787.0091774 ,1567.39458378 ,1574.0183548  , 178.50781233],
+    [ 357.01562466,  550.91117705,  598.4276272 , 1548.84659707, 1567.39458378, 3097.69319414, 3134.78916755,  357.01562466],
+    [ 357.01562466,  581.76896187,  598.4276272 , 1567.39458378, 1574.0183548 ,3134.78916755 ,3148.0367096  , 357.01562466],
+    [  40.39347488,   67.70732051,   67.70732051,  178.50781233,  178.50781233, 357.01562466 , 357.01562466 ,  40.39347488]
+    ])
 
 class Mask():
     def __init__(self, model, threshold):
         self.target = []
         self.mask = []
+        index = 0
         for m in model.modules():
             if isinstance(m, Winograd2d):
                 self.target.append(m)
-                self.mask.append(m.weight.data.clone().abs().lt(threshold))
+                if index == 0:
+                    # ignore the first layer
+                    index += 1
+                    self.mask.append(m.weight.data.clone().abs().lt(-1.0))
+                else:
+                    threshold_tensor = torch.from_numpy(mask_multi_4x4_5x5).float()
+                    if m.weight.data.is_cuda:
+                        threshold_tensor = threshold_tensor.cuda()
+                    self.mask.append(m.weight.data.clone().abs().lt(threshold_tensor.pow(-1.0).mul(threshold)))
         return
 
     def print_info(self):
@@ -25,4 +55,9 @@ class Mask():
     def apply(self):
         for i in range(len(self.mask)):
             self.target[i].weight.data[self.mask[i]] = 0.0
+        return
+
+    def mask_grad(self):
+        for i in range(len(self.mask)):
+            self.target[i].weight.grad.data[self.mask[i]] = 0.0
         return
