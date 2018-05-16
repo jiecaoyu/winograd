@@ -77,7 +77,7 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     if args.prune:
-        torch.save(state, 'saved_models/'+args.arch+'.winograd.prune.pth.tar')
+        torch.save(state, 'saved_models/'+args.arch+'.winograd.prune'+str(args.stage)+'.pth.tar')
     else:
         torch.save(state, 'saved_models/'+args.arch+'.winograd.best_origin.pth.tar')
     return
