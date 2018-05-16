@@ -14,7 +14,6 @@ from torch.autograd import Variable
 
 
 def load_state(model, state_dict):
-    param_dict = dict(model.named_parameters())
     state_dict_keys = state_dict.keys()
     cur_state_dict = model.state_dict()
     for key in cur_state_dict:

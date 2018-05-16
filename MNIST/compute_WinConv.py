@@ -14,7 +14,6 @@ from torch.autograd import Variable
 
 
 def load_state(model, state_dict):
-    param_dict = dict(model.named_parameters())
     state_dict_keys = state_dict.keys()
     cur_state_dict = model.state_dict()
     for key in cur_state_dict:
@@ -42,8 +41,6 @@ def test(evaluate=False):
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
     
-    acc = 100. * float(correct) / len(test_loader.dataset)
-
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
         test_loss * args.batch_size, correct, len(test_loader.dataset),

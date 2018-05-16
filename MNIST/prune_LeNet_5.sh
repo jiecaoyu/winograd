@@ -1,3 +1,4 @@
+#!/bin/bash
 # train the original model -- 99.43%
 CUDA_VISIBLE_DEVICES=6,7 python train_winograd.py --weight-decay 0.0001 --seed 100
 
