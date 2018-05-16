@@ -1,0 +1,289 @@
+
+\documentclass[12pt]{article} % Default font size is 12pt, it can be changed here
+
+\usepackage[margin=1.0in]{geometry} % Required to change the page size to A4
+\geometry{letterpaper} % Set the page size to be A4 as opposed to the default US Letter
+
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{multirow}
+
+% \title{\vspace{-20mm}XNOR-Net Training\vspace{-10mm}}
+% \date{}
+
+\title{Gradient Computation in Winograd Domain}
+\date{\vspace{-5ex}}
+
+\begin{document}
+\maketitle
+
+\section{Winograd Convolution}
+Assume we need to perform convolution on a $m \times m$ input tile $\boldsymbol{I}$ with a $n \times n$ weight kernel $\boldsymbol{W}$. The output tile $\boldsymbol{O}$ will have a size of $(m - n + 1) \times (m - n + 1)$.
+
+With the Winograd transformation, this convolution operation can be performed by
+\begin{equation}
+	\boldsymbol{O} = \boldsymbol{A}^{\top} \left [ (\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}) \odot (\boldsymbol{B}^{\top} \boldsymbol{I} \boldsymbol{B}) \right ] \boldsymbol{A}
+\end{equation}
+where $\boldsymbol{A}$, $\boldsymbol{G}$ and $\boldsymbol{B}$ are matrices used for the Winograd transformation. $\odot$ is element-wise matrix multiplication.
+
+As an example, for $m = 4$ and $n = 3$, we have
+
+\begin{equation}
+\boldsymbol{B}^{\top}=\left [ \begin{matrix}
+ 1 & 0 & -1 & 0 \\ 
+ 0 & 1 & 1 & 0 \\ 
+ 0 & -1 & 1 & 0 \\ 
+ 0 & 1 & 0 & -1
+\end{matrix} \right ]
+\;
+\boldsymbol{G}=\left [ \begin{matrix}
+ 1 & 0 & 0\\ 
+ 1/2 & 1/2 & 1/2 \\ 
+ 1/2 & -1/2 & 1/2 \\ 
+ 0 & 0 & 1 
+\end{matrix} \right ]
+\;
+\boldsymbol{A}^{\top}=\left [ \begin{matrix}
+ 1 & 1 & 1 & 0 \\ 
+ 0 & 1 & -1 & -1
+\end{matrix} \right ]
+\end{equation}
+
+In this note, we only discuss the situation with an one-channel input tile and an one-channel weight kernel. It can be extended to a normal convolutional layer.
+
+\section{Winograd Layer}
+Deep Neural Networks (DNNs) have much internal redundancy. We can remove weight parameters from DNN models to reduce computation and model sizes. In this case, the weight kernels, e.g., $\boldsymbol{W}$, will become sparse.
+
+In the Winograd convolution, the majority of the floating-point multiplication is performed in the element-wise multiplication. Therefore, to fully utilize the redundancy in DNN models, we need higher sparsity in $\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$. However, the sparsity in $\boldsymbol{W}$ cannot be directly transformed into the sparsity in $\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$.
+
+Assume $\boldsymbol{Q} = \boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$. Here $\boldsymbol{Q}$ has a size of $m \times m$ and $\boldsymbol{W}$ has a size of $n \times n$. Since we will have $m > n$, the mapping from $\boldsymbol{W}$ to $\boldsymbol{Q}$ is non-invertible.
+
+One solution to increase the sparsity in $\boldsymbol{Q}$ is to directly consider $\boldsymbol{Q}$ as the parameters for a convolutional layer. Convolutional layers with weight parameters in the Winograd domain are named as Winograd layers. Then we can remove unimportant parameters directly from $\boldsymbol{Q}$.
+
+The computation performed by a Winograd layer is
+
+\begin{equation}
+	\boldsymbol{O} = \boldsymbol{A}^{\top} \left [ \boldsymbol{Q} \odot (\boldsymbol{B}^{\top} \boldsymbol{I} \boldsymbol{B}) \right ] \boldsymbol{A}
+\end{equation}
+
+\section{Explosion of Update Steps}
+
+With Winograd layers instead of original convolutional layers, we can still use stochastic gradient descent (SGD) algorithm to train the network. However, we found it requires a small learning rate (LR) and, therefore, the training converges extremely slow.
+
+This is due to the explosion of update steps caused by the linear transformation $\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$. Here we use a simple example to show the explosion problem of update steps.
+
+Assume we have a parameter $x$ and its gradient with respect to the loss ($L$) is
+\begin{equation}
+	\frac{\partial L}{\partial x} = 1
+\end{equation}
+with $LR=0.1$, $x$ will be updated by
+\begin{equation}
+	x := x + \Delta{x}
+\end{equation}
+\begin{equation}
+	\Delta{x} = -LR \cdot \frac{\partial L}{\partial x} = -0.1
+\end{equation}
+
+Assume we use a linear transformation
+\begin{equation}
+	y = 0.1 x
+\end{equation}
+to map $x$ to $y$. If we are training parameter $x$, then we need to update $y$ by
+\begin{equation}
+	y := y + \Delta{y}
+\end{equation}
+\begin{equation}
+	\Delta{y} = 0.1 \cdot \Delta{x} = -0.01
+\end{equation}
+
+However, assuming we are now directly performing training on $y$, the gradient of $y$ with respect to the loss ($L$) is
+\begin{equation}
+	\frac{\partial L}{\partial y} = \frac{\partial L}{\partial x} \cdot \frac{\partial x}{\partial y} = 10
+\end{equation}
+In this case, $y$ will be updated by
+\begin{equation}
+	y := y + \Delta{y}'
+\end{equation}
+\begin{equation}
+	\Delta{y}' = -LR \cdot \frac{\partial L}{\partial y} = -1
+\end{equation}
+We will have $\Delta{y}' = 100 \cdot \Delta{y}$. It means, if we directly train the parameter $y$ instead of $x$, the updates on $y$ will be extended by 100x, which is an explosion in update steps.
+
+The linear transformation $\boldsymbol{Q} = \boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$ will have a similar effect. The direct training of $\boldsymbol{Q}$ will suffer from the explosion of the update steps, which requires LR to be extremely small. Also, it is difficult to find appropriate LR for each parameter in $\boldsymbol{Q}$.
+
+\section{Gradients in Winograd Domain}
+For parameter $y$, one solution for the explosion of update steps is to calculate $\Delta{y}$ by
+\begin{equation}
+	\Delta{y} = \Delta(0.1 x)= 0.1 \cdot \Delta{x} = 0.1 \cdot (-LR) \cdot \frac{\partial L}{\partial x}
+\end{equation}
+
+In this case, the effective gradient of $y$, $(\frac{\partial L}{\partial y})^*$, can be calculated by
+\begin{equation}
+	(\frac{\partial L}{\partial y})^*
+	= \frac{\Delta{y}}{-LR}
+	= \frac{0.1 \cdot \Delta{x}}{-LR}
+	= \frac{0.1 \cdot (-LR) \cdot \frac{\partial L}{\partial x}}{-LR}
+	= 0.1\cdot \frac{\partial L}{\partial x}
+\end{equation}
+
+Similarly, for the Winograd layer parameters $\boldsymbol{Q}$, we need to have
+\begin{equation}
+	\Delta{\boldsymbol{Q}} = \Delta(\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}) = \boldsymbol{G} (\Delta\boldsymbol{W}) \boldsymbol{G}^{\top}
+\end{equation}
+
+Therefore, we can calculate the effective gradients for $\boldsymbol{Q}$ by
+\begin{equation}
+\label{gradient_q}
+\begin{aligned}
+	(\frac{\partial L}{\partial \boldsymbol{Q}})^*
+		&= \frac{\Delta{\boldsymbol{Q}}}{-LR} = \boldsymbol{G} \frac{\Delta\boldsymbol{W}}{-LR} \boldsymbol{G}^{\top}
+		= \boldsymbol{G} \frac{\partial L}{\partial \boldsymbol{W}} \boldsymbol{G}^{\top}
+\end{aligned}
+\end{equation}
+
+Since $\boldsymbol{Q} = \boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$, we will have
+\begin{equation}
+\label{gradient_w}
+	\frac{\partial L}{\partial \boldsymbol{W}} = \boldsymbol{G}^{\top} \frac{\partial L}{\partial \boldsymbol{Q}} \boldsymbol{G}
+\end{equation}
+where $\frac{\partial L}{\partial \boldsymbol{Q}}$ is the original gradients of $\boldsymbol{Q}$ calculated through back-propagation.
+
+Therefore, based on Equation~\ref{gradient_q} and~\ref{gradient_w}, we will have
+\begin{equation}
+\label{effective_grad}
+\begin{aligned}
+	(\frac{\partial L}{\partial \boldsymbol{Q}})^*
+		= \boldsymbol{G} \frac{\partial L}{\partial \boldsymbol{W}} \boldsymbol{G}^{\top}
+		= \boldsymbol{G} (\boldsymbol{G}^{\top} \frac{\partial L}{\partial \boldsymbol{Q}} \boldsymbol{G}) \boldsymbol{G}^{\top}
+		= (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top})
+\end{aligned}
+\end{equation}
+
+Then $\boldsymbol{Q}$ will be updated by
+\begin{equation}
+	\boldsymbol{Q} := \boldsymbol{Q} - LR \cdot (\frac{\partial L}{\partial \boldsymbol{Q}})^*
+\end{equation}
+
+\section{Regularization}
+In this section, we will discuss how to perform regularization on $\boldsymbol{Q}$.
+
+The loss function of DNN models usually includes two parts: the divergence between the DNN output and the ground-truth output, $L^D$, and the regularization term, $L^R$. The regularization term is used to prevent over-fitting. In this case, we have
+\begin{equation}
+	L = L^D + L^R
+\end{equation}
+
+Assume we are using the L2 regularization, then for the original weight kernel $\boldsymbol{W}$,
+\begin{equation}
+	L^R = \frac{\lambda}{2}{||\boldsymbol{W}||}_2
+\end{equation}
+where $\lambda$ is the regularization strength which is a scalar value.
+
+Assume with the Winograd layers, we still use the same loss function as for the original convolutional layers. Then for Equation~\ref{effective_grad}, we have
+\begin{equation}
+\label{effective_grad_2}
+\begin{aligned}
+	(\frac{\partial L}{\partial \boldsymbol{Q}})^*
+		&= (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) \\
+		&= (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^D}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) + 
+		(\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^R}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top})
+\end{aligned}
+\end{equation}
+
+$\frac{\partial L^D}{\partial \boldsymbol{Q}}$ can be calculated with the back-propagation. But
+\begin{equation}
+\frac{\partial L^R}{\partial \boldsymbol{Q}} = \frac{\partial}{\partial \boldsymbol{Q}}(\frac{\lambda}{2}{||\boldsymbol{W}||}_2)
+\end{equation}
+is intractable since the linear transformation, $\boldsymbol{Q} = \boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}$, is non-invertible.
+
+However, we can simplify the computation since
+\begin{equation}
+\begin{aligned}
+	(\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^R}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top})
+		&=\boldsymbol{G} (\boldsymbol{G}^{\top} \frac{\partial L^R}{\partial \boldsymbol{Q}} \boldsymbol{G}) \boldsymbol{G}^{\top} \\
+		&= \boldsymbol{G} \frac{\partial L^R}{\partial \boldsymbol{W}} \boldsymbol{G}^{\top} \\
+		&= \boldsymbol{G} (\lambda \cdot \boldsymbol{W}) \boldsymbol{G}^{\top} \\
+		&= \lambda \cdot (\boldsymbol{G} \boldsymbol{W} \boldsymbol{G}^{\top}) \\
+		&= \lambda \cdot \boldsymbol{Q}
+\end{aligned}
+\end{equation}
+
+Then, Equation~\ref{effective_grad_2} can be simplified to
+
+\begin{equation}
+\begin{aligned}
+	(\frac{\partial L}{\partial \boldsymbol{Q}})^*
+		&= (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^D}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) + 
+		(\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^R}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) \\
+		&= (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^D}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) +
+		\lambda \cdot \boldsymbol{Q}
+\end{aligned}
+\end{equation}
+
+The term, $\lambda \cdot \boldsymbol{Q}$, means, effectively, we are directly applying an L2 regularization
+\begin{equation}
+	(L^R)^* = \frac{\lambda}{2}{||\boldsymbol{Q}||}_2
+\end{equation}
+on $\boldsymbol{Q}$, the parameters in the Winograd domain.
+
+In conclusion, the update we need to perform in each step of SGD is
+\begin{equation}
+\label{final}
+	\boldsymbol{Q} := \boldsymbol{Q}
+	- LR \cdot [(\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^D}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top})
+	+ \lambda \cdot \boldsymbol{Q}]
+\end{equation}
+
+\iffalse
+
+\section{Numerical Precision Problem}
+
+The transform matrix $\boldsymbol{G}$ usually includes small values. As an example, for $m = 8$ and $n = 5$,
+\begin{equation}
+\boldsymbol{G}=\left [ \begin{matrix}
+ 1   &   0   &  0   &   0   &   0   \\                              
+-2/9 & -2/9  & -2/9 & -2/9  & -2/9  \\
+-2/9 &  2/9  & -2/9 &  2/9  & -2/9  \\
+1/90 & 1/45  & 2/45 & 4/45  & 8/45  \\
+1/90 & -1/45 & 2/45 & -4/45 & 8/45  \\
+4/45 & 2/45  & 1/45 & 1/90  & 1/180 \\
+4/45 & -2/45 & 1/45 & -1/90 & 1/180 \\
+ 0   &   0   &   0  &    0  &    1  
+\end{matrix} \right ]
+\end{equation}
+where $\boldsymbol{G}$ has some small values like $1/180$. Therefore, when performing SGD algorithm as shown in Equation~\ref{final}, we will suffer from the limitation of the numerical precision.
+
+To solve this problem, we will scale up $\boldsymbol{G}$ and $\boldsymbol{Q}$ for the computation and then scale the results down after we finish the computation of the effective gradients.
+
+As an example, for $m = 8$ and $n = 5$, the computation in Equation~\ref{final} will be performed as following
+\begin{equation}
+\begin{aligned}
+	&1.\;\; \boldsymbol{G} = 180 \cdot \boldsymbol{G} \\
+	&2.\;\; (\frac{\partial L^D}{\partial \boldsymbol{Q}})^* = (\boldsymbol{G} \boldsymbol{G}^{\top})\frac{\partial L^D}{\partial \boldsymbol{Q}}(\boldsymbol{G} \boldsymbol{G}^{\top}) \\
+	&3.\;\; (\frac{\partial L^D}{\partial \boldsymbol{Q}})^* = (\frac{(\frac{\partial L^D}{\partial \boldsymbol{Q}})^*}{180^4}) \cdot 10^6\\
+	&4.\;\; \lambda = 10^6 \cdot \lambda \\
+	&5.\;\; (\frac{\partial L}{\partial \boldsymbol{Q}})^* = (\frac{\partial L^D}{\partial \boldsymbol{Q}})^* + \lambda \cdot \boldsymbol{Q} \\
+	&6.\;\; (\frac{\partial L}{\partial \boldsymbol{Q}})^* = \frac{(\frac{\partial L}{\partial \boldsymbol{Q}})^*}{10^6} \\
+	&7.\;\; \boldsymbol{Q} := \boldsymbol{Q} - LR \cdot (\frac{\partial L}{\partial \boldsymbol{Q}})^*
+\end{aligned}
+\end{equation}
+\fi
+
+\clearpage
+
+\section{Evaluation and Results}
+We perform the training on two networks on the MNIST dataset: LeNet-5 and LeNet-5-3x3. LeNet-5 includes 2 convolution layers with the kernel size of 5 and 2 fully-connected layers. LeNet-5-3x3 is designed by ourselves. It includes 4 convolution layers with the kernel size of 3. The size of the output tiles in the Winograd convolution is fixed to $4 \times 4$, which means $m - n + 1 = 4$. All networks are trained from scratch. Table~\ref{acc} shows the results.
+\begin{table}[h]
+\centering
+\caption{Training Accuracy}
+\label{acc}
+\begin{tabular}{|c|c|c|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{Accuracy (\%)} \\ \cline{2-3} 
+                  & Original         & Winograd        \\ \hline
+LeNet-5           & 99.44\%          & 99.44\%         \\ \hline
+LeNet-5-3x3       & 99.26\%          & 99.24\%         \\ \hline
+\end{tabular}
+\end{table}
+\clearpage
+
+
+\end{document}
