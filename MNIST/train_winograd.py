@@ -92,9 +92,12 @@ def train(epoch):
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
+        # if args.prune:
+        #     mask.mask_grad()
         if args.prune:
-            mask.mask_grad()
-        grad_optimizer.step()
+            grad_optimizer.step_prune(mask)
+        else:
+            grad_optimizer.step()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -248,7 +251,7 @@ if __name__=='__main__':
     grad_optimizer = GradOptimizer(model)
 
     if args.prune:
-        mask = Mask(model, args.threshold)
+        mask = Mask(model, args.threshold, gamma=1000)
         mask.print_info()
 
     if args.evaluate:
