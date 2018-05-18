@@ -251,7 +251,7 @@ if __name__=='__main__':
     grad_optimizer = GradOptimizer(model)
 
     if args.prune:
-        mask = Mask(model, args.threshold, gamma=1000)
+        mask = Mask(model, args.threshold, gamma=1)
         mask.print_info()
 
     if args.evaluate:
