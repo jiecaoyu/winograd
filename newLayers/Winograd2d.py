@@ -151,7 +151,7 @@ class Winograd2d(nn.Module):
         weight_size = list(self.weight.shape)
         weight_size = [self.groups, self.out_channels / self.groups] \
                 + weight_size[1:]
-        weight_t = self.weight.view(weight_size).unsqueeze(0).unsqueeze(4).unsqueeze(5)
+        weight_t = self.weight.view(weight_size)
 
         # prepare the inputs
         x = x.unfold(dimension=2, size=self.input_tile_size, step=self.output_tile_size)\
@@ -166,12 +166,24 @@ class Winograd2d(nn.Module):
         # prepare the shape of the inputs and weights
         x_t = x_t.view(
                 [x_size[0], self.groups, x_size[1]/self.groups,\
-                        x_size[2], x_size[3], x_size[4], x_size[5]]).unsqueeze(2)
+                        x_size[2], x_size[3], x_size[4], x_size[5]])
 
         # calculate the output
         # this computation strategy destory the memory usage and need to optimize
-        y_t = x_t.mul(weight_t)
-        y_t = y_t.sum(3)
+        weight_t = weight_t.permute(0, 3, 4, 1, 2)
+        weight_t = weight_t.contiguous().view(
+                self.groups * self.input_tile_size * self.input_tile_size,
+                -1, self.in_channels / self.groups)
+        x_t = x_t.permute(1, 5, 6, 2, 0, 3, 4)
+        x_t = x_t.contiguous().view(
+                self.groups * self.input_tile_size * self.input_tile_size,
+                self.in_channels / self.groups, -1)
+
+        y_t = torch.bmm(weight_t, x_t)
+        y_t = y_t.view(self.groups, self.input_tile_size, self.input_tile_size,
+                self.out_channels / self.groups, x_size[0],
+                x_size[2], x_size[3])
+        y_t = y_t.permute(4, 0, 3, 5, 6, 1, 2).contiguous()
         y_t_size = y_t.size()
         y_t = y_t.view(-1, 
                 self.input_tile_size, self.input_tile_size)
