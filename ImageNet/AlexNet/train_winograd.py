@@ -9,10 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
-import torch.distributed as dist
 import torch.optim
 import torch.utils.data
-import torch.utils.data.distributed
 # import torchvision.transforms as transforms
 # import torchvision.datasets as datasets
 import model_list
@@ -28,6 +26,9 @@ cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 import datasets as datasets
 import datasets.transforms as transforms
+
+sys.path.append(cwd+'/../')
+from utils import *
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='alexnet',
@@ -54,14 +55,8 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--pretrained', default='', type=str, metavar='PRE',
-                    help='pretrained model')
-parser.add_argument('--world-size', default=1, type=int,
-                    help='number of distributed processes')
-parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
-                    help='url used to set up distributed training')
-parser.add_argument('--dist-backend', default='gloo', type=str,
-                    help='distributed backend')
+parser.add_argument('--pretrained_normal', default='', type=str, metavar='PRE',
+                    help='pretrained_normal model')
 
 best_prec1 = 0
 
@@ -70,28 +65,18 @@ def main():
     global args, best_prec1
     args = parser.parse_args()
 
-    args.distributed = args.world_size > 1
-
-    if args.distributed:
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size)
-
     # create model
     if args.arch=='alexnet':
-        model = model_list.alexnet()
+        model = model_list.alexnet(winograd=True)
         input_size = 227
     else:
         raise Exception('Model not supported yet')
 
-    if not args.distributed:
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
-    else:
+    if args.arch.startswith('alexnet'):
+        model.features = torch.nn.DataParallel(model.features)
         model.cuda()
-        model = torch.nn.parallel.DistributedDataParallel(model)
+    else:
+        model = torch.nn.DataParallel(model).cuda()
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
@@ -113,13 +98,13 @@ def main():
                   .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
-    elif args.pretrained:
-        if os.path.isfile(args.pretrained):
-            print("=> loading pretrained model '{}'".format(args.pretrained))
-            checkpoint = torch.load(args.pretrained)
-            load_state(model, checkpoint['state_dict'])
+    elif args.pretrained_normal:
+        if os.path.isfile(args.pretrained_normal):
+            print("=> loading pretrained_normal model '{}'".format(args.pretrained_normal))
+            checkpoint = torch.load(args.pretrained_normal)
+            load_state_normal(model, checkpoint['state_dict'])
         else:
-            print("=> no pretrained model found at '{}'".format(args.resume))
+            print("=> no pretrained_normal model found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
@@ -148,10 +133,7 @@ def main():
         ]),
         Train=True)
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
+    train_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=False,
@@ -174,8 +156,6 @@ def main():
         return
 
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
@@ -348,6 +328,47 @@ def load_state(model, state_dict):
     for key in cur_state_dict:
         if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
             cur_state_dict[key].copy_(state_dict[key.replace('module.', '')])
+
+def load_state_normal(model, state_dict):
+    state_dict_keys = state_dict.keys()
+    for key in state_dict_keys:
+        if 'module' in key:
+            state_dict[key.replace('module.', '')] = state_dict[key]
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
+            old_key = key.replace('module.', '')
+            print(key)
+            target_data = state_dict[old_key]
+            if cur_state_dict[key].shape == state_dict[old_key].shape:
+                # original weights will be kept
+                cur_state_dict[key].copy_(state_dict[old_key])
+            else:
+                # original weights will be transfered into Winograd domain
+                print('Winograd')
+                kernel_size = state_dict[key].shape[3]
+                if kernel_size == 5:
+                    G = torch.from_numpy(G_4x4_5x5).float()
+                    BT = torch.from_numpy(BT_4x4_5x5).float()
+                elif kernel_size == 3:
+                    G = torch.from_numpy(G_4x4_3x3).float()
+                    BT = torch.from_numpy(BT_4x4_3x3).float()
+                else:
+                    raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
+                weight = state_dict[key]
+                weight_t = weight.view(weight.shape[0] * weight.shape[1],
+                        kernel_size, kernel_size)
+                if weight.is_cuda:
+                    G = G.cuda()
+                weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                        weight_t)
+                GT = G.transpose(0, 1)
+                weight_t = torch.bmm(weight_t,
+                        GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+                weight_t = weight_t.view(weight.shape[0], weight.shape[1],
+                        BT.shape[0], BT.shape[1])
+                cur_state_dict[key].copy_(weight_t)
 
 if __name__ == '__main__':
     main()

@@ -72,8 +72,7 @@ KernelSize2InputTileSize = {
 
 class Winograd2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-            padding=0,
-            initialize_std = 0.05):
+            padding=0, groups=1):
         super(Winograd2d, self).__init__()
         assert(stride == 1, 'Only stride = 1 is supported')
         assert(kernel_size == 5, 'Only kernel_size = 5 is supported')
@@ -81,8 +80,11 @@ class Winograd2d(nn.Module):
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.padding = padding
+        self.groups = groups
 
-        self.weight = nn.Parameter(torch.FloatTensor(out_channels, in_channels,
+        assert((in_channels % groups == 0), 'in_channels % groups != 0')
+        self.weight = nn.Parameter(torch.FloatTensor(
+            out_channels, in_channels/groups,
             KernelSize2InputTileSize[kernel_size],
             KernelSize2InputTileSize[kernel_size]).normal_(0, 0.01))
         self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(1, 0.01))
@@ -106,18 +108,19 @@ class Winograd2d(nn.Module):
         self.output_tile_size = self.AT.shape[0]
 
         # initialization
-        n = in_channels * kernel_size * kernel_size
+        n = (in_channels / groups) * kernel_size * kernel_size
         stdv = 1. / math.sqrt(n)
-        weight_normal = torch.zeros([out_channels, in_channels, kernel_size, kernel_size],
+        weight_normal = torch.zeros(
+                [out_channels, in_channels / groups, kernel_size, kernel_size],
                 dtype=torch.float32).uniform_(-stdv, stdv)
-        weight_t = weight_normal.view(out_channels * in_channels,
+        weight_t = weight_normal.view(out_channels * in_channels / groups,
                 kernel_size, kernel_size)
         weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
                 weight_t)
         GT = G.transpose(0, 1)
         weight_t = torch.bmm(weight_t,
                 GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
-        weight_t = weight_t.view(out_channels, in_channels,
+        weight_t = weight_t.view(out_channels, in_channels / groups,
                 BT.shape[0], BT.shape[1])
         self.weight.data.copy_(weight_t)
 
@@ -145,7 +148,10 @@ class Winograd2d(nn.Module):
             additinal_padding = False
 
         # prepare the weights // use torch.bmm()
-        weight_t = self.weight.unsqueeze(0).unsqueeze(3).unsqueeze(4)
+        weight_size = list(self.weight.shape)
+        weight_size = [self.groups, self.out_channels / self.groups] \
+                + weight_size[1:]
+        weight_t = self.weight.view(weight_size).unsqueeze(0).unsqueeze(4).unsqueeze(5)
 
         # prepare the inputs
         x = x.unfold(dimension=2, size=self.input_tile_size, step=self.output_tile_size)\
@@ -158,11 +164,14 @@ class Winograd2d(nn.Module):
         x_t = torch.bmm(x_t, B.unsqueeze(0).expand(x.size()[0], *B.size()))
 
         # prepare the shape of the inputs and weights
-        x_t = x_t.view(x_size).unsqueeze(1)
+        x_t = x_t.view(
+                [x_size[0], self.groups, x_size[1]/self.groups,\
+                        x_size[2], x_size[3], x_size[4], x_size[5]]).unsqueeze(2)
 
         # calculate the output
+        # this computation strategy destory the memory usage and need to optimize
         y_t = x_t.mul(weight_t)
-        y_t = y_t.sum(2)
+        y_t = y_t.sum(3)
         y_t_size = y_t.size()
         y_t = y_t.view(-1, 
                 self.input_tile_size, self.input_tile_size)
@@ -171,10 +180,10 @@ class Winograd2d(nn.Module):
         A = self.AT.transpose(0, 1)
         y = torch.bmm(y, A.unsqueeze(0).expand(y_t.size()[0], *A.size()))
 
-        y = y.view(y_t_size[0], y_t_size[1], y_t_size[2], y_t_size[3],
+        y = y.view(y_t_size[0], y_t_size[1] * y_t_size[2], y_t_size[3], y_t_size[4],
                 self.output_tile_size, self.output_tile_size)
-        y = y.permute(0,1,2,4,3,5).contiguous().view(y_t_size[0], y_t_size[1],
-                y_t_size[2] * self.output_tile_size, y_t_size[2] * self.output_tile_size)
+        y = y.permute(0,1,2,4,3,5).contiguous().view(y_t_size[0], y_t_size[1] * y_t_size[2],
+                y_t_size[3] * self.output_tile_size, y_t_size[3] * self.output_tile_size)
 
         y = y.add(self.bias.unsqueeze(0).unsqueeze(2).unsqueeze(3))
 

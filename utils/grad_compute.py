@@ -9,7 +9,6 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd+'/../')
 import numpy
-from torchvision import datasets, transforms
 from torch.autograd import Variable
 from newLayers import *
 

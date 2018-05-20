@@ -45,10 +45,6 @@ def load_state_normal(model, state_dict):
                 cur_state_dict[key].copy_(weight_t)
             else:
                 cur_state_dict[key].copy_(state_dict[key])
-        elif key.replace('module.','') in state_dict_keys:
-            cur_state_dict[key].copy_(state_dict[key.replace('module.','')])
-        elif 'module.'+key in state_dict_keys:
-            cur_state_dict[key].copy_(state_dict['module.'+key])
     return
 
 def load_state_winograd(model, state_dict):
