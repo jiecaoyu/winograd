@@ -79,22 +79,22 @@ class Mask():
             s = tmp_mask.shape
             tmp_mask = tmp_mask.view(s[0] * s[1], s[2] * s[3]).float()
             if self.target[i].kernel_size == 5:
-                A = torch.from_numpy(A_4x4_5x5).float()
+                S = torch.from_numpy(S_4x4_5x5).float()
                 I = torch.eye(5 * 5)
                 strength = torch.from_numpy(mask_multi_4x4_5x5).float().view(-1)
             elif self.target[i].kernel_size == 3:
-                A = torch.from_numpy(A_4x4_3x3).float()
+                S = torch.from_numpy(S_4x4_3x3).float()
                 I = torch.eye(3 * 3)
                 strength = torch.from_numpy(mask_multi_4x4_3x3).float().view(-1)
             else:
                 raise Exception ('kernel_size currently not supported')
             if self.target[i].weight.is_cuda:
-                A = A.cuda()
+                S = S.cuda()
                 I = I.cuda()
                 strength = strength.cuda()
             # strength = strength.div(strength.pow(2.0).mean().pow(0.5))
 
-            B = tmp_mask.mul(strength.unsqueeze(0)).unsqueeze(2).mul(A.unsqueeze(0))
+            B = tmp_mask.mul(strength.unsqueeze(0)).unsqueeze(2).mul(S.unsqueeze(0))
             BT_mul_B = B.transpose(1, 2).bmm(B)
             transfer_matrix = I + BT_mul_B.mul(self.gamma)
             transfer_matrix = [t.inverse() for t in torch.functional.unbind(transfer_matrix)]

@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from numpy.linalg import inv
 import re
 import numpy
-A_4x4_3x3 = numpy.array([
+S_4x4_3x3 = numpy.array([
     [1/16, 0, 0, 0, 0, 0, 0, 0, 0],
     [-1/24, -1/24, -1/24, 0, 0, 0, 0, 0, 0],
     [-1/24, 1/24, -1/24, 0, 0, 0, 0, 0, 0],
@@ -42,7 +42,7 @@ A_4x4_3x3 = numpy.array([
     [0, 0, 0, 0, 0, 0, 0, 0, 1]
     ])
 
-A_4x4_5x5 = numpy.array([
+S_4x4_5x5 = numpy.array([
     [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [-2/9, -2/9, -2/9, -2/9, -2/9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [-2/9, 2/9, -2/9, 2/9, -2/9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
