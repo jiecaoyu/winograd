@@ -29,7 +29,7 @@ mask_multi_4x4_5x5 = numpy.array([
     ])
 
 class Mask():
-    def __init__(self, model, threshold, gamma=0):
+    def __init__(self, model, threshold, gamma=0, include_first=False):
         self.target = []
         self.mask = []
         self.gamma = gamma
@@ -37,13 +37,15 @@ class Mask():
         for m in model.modules():
             if isinstance(m, Winograd2d):
                 self.target.append(m)
-                if index == 0:
+                if index == 0 and not include_first:
                     # ignore the first layer
                     index += 1
                     self.mask.append(m.weight.data.clone().abs().lt(-1.0))
                 else:
                     if m.kernel_size == 5:
                         threshold_tensor = torch.from_numpy(mask_multi_4x4_5x5).float()
+                    elif m.kernel_size == 3:
+                        threshold_tensor = torch.from_numpy(mask_multi_4x4_3x3).float()
                     else:
                         raise Exception ('kernel_size currently not supported')
                     if m.weight.data.is_cuda:
@@ -80,6 +82,10 @@ class Mask():
                 A = torch.from_numpy(A_4x4_5x5).float()
                 I = torch.eye(5 * 5)
                 strength = torch.from_numpy(mask_multi_4x4_5x5).float().view(-1)
+            elif self.target[i].kernel_size == 3:
+                A = torch.from_numpy(A_4x4_3x3).float()
+                I = torch.eye(3 * 3)
+                strength = torch.from_numpy(mask_multi_4x4_3x3).float().view(-1)
             else:
                 raise Exception ('kernel_size currently not supported')
             if self.target[i].weight.is_cuda:

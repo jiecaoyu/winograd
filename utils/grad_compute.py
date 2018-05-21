@@ -48,9 +48,13 @@ class GradOptimizer():
     def step_prune(self, mask):
         for index in range(len(self.grad_target)):
             if self.kernel_size[index] == 5:
-                G = torch.from_numpy(G_4x4_5x5).float().cuda()
+                G = torch.from_numpy(G_4x4_5x5).float()
             elif self.kernel_size[index] == 3:
+                G = torch.from_numpy(G_4x4_3x3).float()
+            else:
                 raise Exception ('Currently not supported')
+            if self.grad_target[index].is_cuda:
+                G = G.cuda()
             # compute beta
             input_tile_size = self.input_tile_size[index]
             grad_target = self.grad_target[index].grad.data

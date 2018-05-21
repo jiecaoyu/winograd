@@ -39,6 +39,8 @@ parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                     help='number of data loading workers (default: 16)')
 parser.add_argument('--epochs', default=120, type=int, metavar='N',
                     help='number of total epochs to run')
+parser.add_argument('--lr-epochs', default=35, type=int, metavar='N',
+                    help='number of epochs to degrade lr')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
@@ -57,6 +59,15 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained_normal', default='', type=str, metavar='PRE',
                     help='pretrained_normal model')
+parser.add_argument('--pretrained_winograd', default='', type=str, metavar='PRE',
+                    help='pretrained_winograd model')
+
+parser.add_argument('--prune', action='store_true', default=False,
+        help='enable pruning')
+parser.add_argument('--threshold', type=float, default=0.0,
+        help='pruning threshold')
+parser.add_argument('--stage', type=int, default=0,
+        help='pruning stage')
 
 best_prec1 = 0
 
@@ -105,6 +116,17 @@ def main():
             load_state_normal(model, checkpoint['state_dict'])
         else:
             print("=> no pretrained_normal model found at '{}'".format(args.resume))
+    elif args.pretrained_winograd:
+        if os.path.isfile(args.pretrained_winograd):
+            print("=> loading pretrained_winograd model '{}'".format(args.pretrained_winograd))
+            checkpoint = torch.load(args.pretrained_winograd)
+            load_state_normal(model, checkpoint['state_dict'])
+        else:
+            print("=> no pretrained_winograd model found at '{}'".format(args.resume))
+    else:
+        if args.prune:
+            raise Exception ('Pruning requires a pretrained model.')
+
 
     cudnn.benchmark = True
 
@@ -150,21 +172,27 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     print(model)
+    
+    if args.prune:
+        mask = Mask(model, args.threshold, gamma=1, include_first=True)
+        mask.print_info()
+    else:
+        mask = None
 
     if args.evaluate:
-        validate(val_loader, model, criterion)
+        validate(val_loader, model, criterion, args.prune, mask)
         return
     
     grad_optimizer = GradOptimizer(model)
 
     for epoch in range(args.start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch)
+        adjust_learning_rate(optimizer, epoch, args.lr_epochs)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, grad_optimizer)
+        train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, args.prune, mask)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        prec1 = validate(val_loader, model, criterion, args.prune, mask)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
@@ -175,10 +203,10 @@ def main():
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
             'optimizer' : optimizer.state_dict(),
-        }, is_best)
+        }, is_best, args.prune, args.stage)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer):
+def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, prune, mask):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -190,6 +218,8 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer):
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
+        if prune:
+            mask.apply()
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -211,7 +241,10 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer):
         optimizer.zero_grad()
         loss.backward()
         
-        grad_optimizer.step()
+        if args.prune:
+            grad_optimizer.step_prune(mask)
+        else:
+            grad_optimizer.step()
 
         optimizer.step()
 
@@ -231,7 +264,7 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer):
     gc.collect()
 
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, prune, mask):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -241,6 +274,8 @@ def validate(val_loader, model, criterion):
     model.eval()
 
     end = time.time()
+    if prune:
+        mask.apply()
     for i, (input, target) in enumerate(val_loader):
         target = target.cuda(async=True)
         input_var = torch.autograd.Variable(input, requires_grad=False)
@@ -275,10 +310,14 @@ def validate(val_loader, model, criterion):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='saved_models/checkpoint.winograd.pth.tar'):
-    torch.save(state, filename)
+def save_checkpoint(state, is_best, prune, stage):
+    if prune:
+        filename='saved_models/checkpoint.winograd.prune' + str(stage) + '.pth.tar'
+    else:
+        filename='saved_models/checkpoint.winograd.pth.tar'
     subprocess.call('mkdir saved_models -p', shell=True)
-    if is_best:
+    torch.save(state, filename)
+    if is_best and not prune:
         shutil.copyfile(filename, 'saved_models/model_best.winograd.pth.tar')
 
 
@@ -300,9 +339,9 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def adjust_learning_rate(optimizer, epoch):
+def adjust_learning_rate(optimizer, epoch, lr_epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 35 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 35))
+    lr = args.lr * (0.1 ** (float(epoch) // lr_epoch))
     print('Learning rate:', lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
