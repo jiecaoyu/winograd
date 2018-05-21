@@ -154,12 +154,14 @@ def main():
     if args.evaluate:
         validate(val_loader, model, criterion)
         return
+    
+    grad_optimizer = GradOptimizer(model)
 
     for epoch in range(args.start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch, grad_optimizer)
 
         # evaluate on validation set
         prec1 = validate(val_loader, model, criterion)
@@ -176,7 +178,7 @@ def main():
         }, is_best)
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -208,6 +210,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
+        
+        grad_optimizer.step()
+
         optimizer.step()
 
         # measure elapsed time
@@ -270,11 +275,11 @@ def validate(val_loader, model, criterion):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='saved_models/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='saved_models/checkpoint.winograd.pth.tar'):
     torch.save(state, filename)
     subprocess.call('mkdir saved_models -p', shell=True)
     if is_best:
-        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
+        shutil.copyfile(filename, 'saved_models/model_best.winograd.pth.tar')
 
 
 class AverageMeter(object):

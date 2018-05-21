@@ -108,7 +108,7 @@ class Winograd2d(nn.Module):
         self.output_tile_size = self.AT.shape[0]
 
         # initialization
-        n = (in_channels / groups) * kernel_size * kernel_size
+        n = in_channels * kernel_size * kernel_size
         stdv = 1. / math.sqrt(n)
         weight_normal = torch.zeros(
                 [out_channels, in_channels / groups, kernel_size, kernel_size],
