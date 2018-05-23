@@ -72,22 +72,23 @@ KernelSize2InputTileSize = {
 
 class Winograd2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-            padding=0, groups=1):
+            padding=0, groups=1, bias=True):
         super(Winograd2d, self).__init__()
-        assert(stride == 1, 'Only stride = 1 is supported')
-        assert(kernel_size == 5, 'Only kernel_size = 5 is supported')
+        assert(stride == 1), 'Only stride = 1 is supported'
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.padding = padding
         self.groups = groups
+        self.bias = bias
 
-        assert((in_channels % groups == 0), 'in_channels % groups != 0')
+        assert((in_channels % groups == 0)), 'in_channels % groups != 0'
         self.weight = nn.Parameter(torch.FloatTensor(
             out_channels, in_channels/groups,
             KernelSize2InputTileSize[kernel_size],
             KernelSize2InputTileSize[kernel_size]).normal_(0, 0.01))
-        self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(1, 0.01))
+        if bias:
+            self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(1, 0.01))
 
         # register buffers for parameter with no grad
         # use .float() to make sure tensors are 32-bit float numbers
@@ -124,7 +125,8 @@ class Winograd2d(nn.Module):
                 BT.shape[0], BT.shape[1])
         self.weight.data.copy_(weight_t)
 
-        self.bias.data.uniform_(-stdv, stdv)
+        if bias:
+            self.bias.data.uniform_(-stdv, stdv)
         del weight_normal, weight_t
         return
 
@@ -197,7 +199,8 @@ class Winograd2d(nn.Module):
         y = y.permute(0,1,2,4,3,5).contiguous().view(y_t_size[0], y_t_size[1] * y_t_size[2],
                 y_t_size[3] * self.output_tile_size, y_t_size[3] * self.output_tile_size)
 
-        y = y.add(self.bias.unsqueeze(0).unsqueeze(2).unsqueeze(3))
+        if self.bias:
+            y = y.add(self.bias.unsqueeze(0).unsqueeze(2).unsqueeze(3))
 
         if additinal_padding:
             y = y[:, :, 0:output_width, 0:output_width]
