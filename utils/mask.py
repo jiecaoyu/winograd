@@ -34,6 +34,7 @@ class Mask():
         self.mask = []
         self.gamma = gamma
         index = 0
+
         for m in model.modules():
             if isinstance(m, Winograd2d):
                 self.target.append(m)
@@ -64,12 +65,16 @@ class Mask():
 
     def apply(self):
         for i in range(len(self.mask)):
-            self.target[i].weight.data[self.mask[i]] = 0.0
+            # self.target[i].weight.data[self.mask[i]] = 0.0
+            self.target[i].weight.data = \
+                    self.target[i].weight.data.mul(1.0 - self.mask[i].float())
         return
 
     def mask_grad(self):
         for i in range(len(self.mask)):
-            self.target[i].weight.grad.data[self.mask[i]] = 0.0
+            # self.target[i].weight.grad.data[self.mask[i]] = 0.0
+            self.target[i].weight.grad.data = \
+                    self.target[i].weight.grad.data.mul(1.0 - self.mask[i].float())
         return
 
     def compute_sparse_grad_transfer(self):

@@ -80,7 +80,6 @@ def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(trainloader):
         if args.prune:
-            mask.save()
             mask.apply()
         # forwarding
         data, target = Variable(data.cuda()), Variable(target.cuda())
@@ -93,26 +92,13 @@ def train(epoch):
         
         mask_update_epochs = 3
         if args.prune:
-            mask.restore()
-            if epoch < mask_update_epochs:
-                mask.record_grad()
-            else:
-                mask.apply()
             mask.mask_grad()
-            count = epoch * len(trainloader) + batch_idx
-            total = mask_update_epochs * len(trainloader)
-            possibility = (float(total - count) / total) ** 3.0
-            indicator = numpy.random.rand(1)[0]
-            if (possibility > indicator) and (epoch < mask_update_epochs):
-                mask.update_mask()
         
         grad_optimizer.step()
         
         # restore weights
         optimizer.step()
         if batch_idx % 100 == 0:
-            if args.prune:
-                mask.print_info()
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tLR: {}'.format(
                 epoch, batch_idx * len(data), len(trainloader.dataset),
                 100. * float(batch_idx) / len(trainloader), loss.data.item(),
@@ -125,7 +111,6 @@ def test():
     test_loss = 0
     correct = 0
     if args.prune:
-        mask.save()
         mask.apply()
     for data, target in testloader:
         data, target = Variable(data.cuda()), Variable(target.cuda())
@@ -134,8 +119,6 @@ def test():
         test_loss += criterion(output, target).data.item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-    if args.prune:
-        mask.restore()
     acc = 100. * float(correct) / len(testloader.dataset)
 
     if acc > best_acc:
@@ -264,6 +247,7 @@ if __name__=='__main__':
     
     if args.prune:
         mask = Mask(model, args.threshold, gamma=1, include_first=True)
+        mask.print_info()
     else:
         mask = None
 

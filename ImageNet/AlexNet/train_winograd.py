@@ -15,6 +15,7 @@ import torch.utils.data
 # import torchvision.datasets as datasets
 import model_list
 import subprocess
+import numpy
 
 # set the seed
 torch.manual_seed(1)
@@ -175,7 +176,6 @@ def main():
     
     if args.prune:
         mask = Mask(model, args.threshold, gamma=1, include_first=True)
-        mask.print_info()
     else:
         mask = None
 
@@ -219,6 +219,7 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, prun
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
         if prune:
+            mask.save()
             mask.apply()
         # measure data loading time
         data_time.update(time.time() - end)
@@ -241,10 +242,26 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, prun
         optimizer.zero_grad()
         loss.backward()
         
+        # if args.prune:
+        #     grad_optimizer.step_prune(mask)
+        # else:
+        #     grad_optimizer.step()
+        mask_update_epochs = 3
         if args.prune:
-            grad_optimizer.step_prune(mask)
-        else:
-            grad_optimizer.step()
+            mask.restore()
+            if epoch < mask_update_epochs:
+                mask.record_grad()
+            else:
+                mask.apply()
+            mask.mask_grad()
+            count = epoch * len(train_loader) + i
+            total = mask_update_epochs * len(train_loader)
+            possibility = (float(total - count) / total) ** 3.0
+            indicator = numpy.random.rand(1)[0]
+            if (possibility > indicator) and (epoch < mask_update_epochs):
+                mask.update_mask()
+        
+        grad_optimizer.step()
 
         optimizer.step()
 
@@ -253,6 +270,8 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, prun
         end = time.time()
 
         if i % args.print_freq == 0:
+            if args.prune:
+                mask.print_info()
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -275,6 +294,7 @@ def validate(val_loader, model, criterion, prune, mask):
 
     end = time.time()
     if prune:
+        mask.save()
         mask.apply()
     for i, (input, target) in enumerate(val_loader):
         target = target.cuda(async=True)
@@ -304,6 +324,8 @@ def validate(val_loader, model, criterion, prune, mask):
                    i, len(val_loader), batch_time=batch_time, loss=losses,
                    top1=top1, top5=top5))
 
+    if prune:
+        mask.restore()
     print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
           .format(top1=top1, top5=top5))
 
