@@ -80,14 +80,14 @@ class Winograd2d(nn.Module):
         self.kernel_size = kernel_size
         self.padding = padding
         self.groups = groups
-        self.bias = bias
+        self.need_bias = bias
 
         assert((in_channels % groups == 0)), 'in_channels % groups != 0'
         self.weight = nn.Parameter(torch.FloatTensor(
             out_channels, in_channels/groups,
             KernelSize2InputTileSize[kernel_size],
             KernelSize2InputTileSize[kernel_size]).normal_(0, 0.01))
-        if bias:
+        if self.need_bias:
             self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(1, 0.01))
 
         # register buffers for parameter with no grad
@@ -125,7 +125,7 @@ class Winograd2d(nn.Module):
                 BT.shape[0], BT.shape[1])
         self.weight.data.copy_(weight_t)
 
-        if bias:
+        if self.need_bias:
             self.bias.data.uniform_(-stdv, stdv)
         del weight_normal, weight_t
         return
@@ -199,7 +199,7 @@ class Winograd2d(nn.Module):
         y = y.permute(0,1,2,4,3,5).contiguous().view(y_t_size[0], y_t_size[1] * y_t_size[2],
                 y_t_size[3] * self.output_tile_size, y_t_size[3] * self.output_tile_size)
 
-        if self.bias:
+        if self.need_bias:
             y = y.add(self.bias.unsqueeze(0).unsqueeze(2).unsqueeze(3))
 
         if additinal_padding:
