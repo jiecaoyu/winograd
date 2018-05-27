@@ -209,12 +209,12 @@ if __name__=='__main__':
 
     criterion = nn.CrossEntropyLoss()
 
+    if args.prune:
+        mask = utils.mask.Mask(model, args.threshold, [1])
+
     if args.evaluate:
         test(evaluate=True)
         exit()
-
-    if args.prune:
-        mask = utils.mask.Mask(model, args.threshold, [1])
 
     for epoch in range(1, args.epochs + 1):
         adjust_learning_rate(optimizer, epoch)
