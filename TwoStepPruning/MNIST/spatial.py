@@ -10,6 +10,13 @@ import subprocess
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
+# import utils
+import os
+import sys
+cwd = os.getcwd()
+sys.path.append(cwd + '/../')
+import utils
+
 def load_state(model, state_dict):
     state_dict_keys = state_dict.keys()
     cur_state_dict = model.state_dict()
@@ -34,11 +41,16 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir saved_models/ -p', shell=True)
-    torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
+    if not args.prune:
+        torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
+    else:
+        torch.save(state, 'saved_models/'+args.arch+'.prune.' + str(args.stage) + '.pth.tar')
 
 def train(epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
+        if args.prune:
+            mask.apply()
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
@@ -59,6 +71,8 @@ def test(evaluate=False):
     test_loss = 0
     correct = 0
 
+    if args.prune:
+        mask.apply()
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -69,7 +83,7 @@ def test(evaluate=False):
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
     
     acc = 100. * float(correct) / len(test_loader.dataset)
-    if (acc > best_acc):
+    if (acc > best_acc) or args.prune:
         best_acc = acc
         if not evaluate:
             save_state(model, best_acc)
@@ -118,6 +132,14 @@ if __name__=='__main__':
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
+    
+    # pruning arguments
+    parser.add_argument('--prune', action='store_true', default=False,
+            help='enable pruning')
+    parser.add_argument('--threshold', type=float, default=0.0,
+            help='pruning threshold')
+    parser.add_argument('--stage', type=int, default=0,
+            help='pruning stage')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -154,6 +176,8 @@ if __name__=='__main__':
 
     if not args.pretrained:
         best_acc = 0.0
+        if args.prune:
+            raise Exception ('Pruning requires pretrained model.')
     else:
         pretrained_model = torch.load(args.pretrained)
         best_acc = pretrained_model['acc']
@@ -188,6 +212,9 @@ if __name__=='__main__':
     if args.evaluate:
         test(evaluate=True)
         exit()
+
+    if args.prune:
+        mask = utils.mask.Mask(model, args.threshold, [1])
 
     for epoch in range(1, args.epochs + 1):
         adjust_learning_rate(optimizer, epoch)
