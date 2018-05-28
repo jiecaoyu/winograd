@@ -47,38 +47,3 @@ class GradOptimizer():
             grad_target = grad_target.view(s[0],s[1], input_tile_size, input_tile_size)
             self.grad_target[index].grad.data = grad_target
         return
-    
-    def step_prune(self, mask):
-        for index in range(len(self.grad_target)):
-            input_tile_size = self.input_tile_size[index]
-            if self.kernel_size[index] == 5:
-                G = torch.from_numpy(G_4x4_5x5).float()
-            elif self.kernel_size[index] == 3:
-                G = torch.from_numpy(G_4x4_3x3).float()
-            else:
-                raise Exception ('Currently not supported')
-            if self.grad_target[index].grad.data.is_cuda:
-                G = G.cuda()
-            input_tile_size = self.input_tile_size[index]
-            grad_target = self.grad_target[index].grad.data
-            s = grad_target.shape
-            grad_target = grad_target.view(-1, input_tile_size, input_tile_size)
-            GT = G.transpose(0, 1)
-            grad_target = torch.bmm(GT.unsqueeze(0).expand(grad_target.size(0), *GT.size()),
-                    grad_target)
-            grad_target = torch.bmm(grad_target,
-                    G.unsqueeze(0).expand(grad_target.size(0), *G.size()))
-            grad_target = grad_target.view(-1, self.kernel_size[index] ** 2)
-            transfer_matrix = mask.sparse_grad_transfer[index]
-            grad_target = grad_target.unsqueeze(2)
-            grad_target = torch.bmm(transfer_matrix, grad_target)
-
-            grad_target = grad_target.view(-1, self.kernel_size[index], self.kernel_size[index])
-
-            grad_target = torch.bmm(G.unsqueeze(0).expand(grad_target.size(0), *G.size()),
-                    grad_target)
-            grad_target = torch.bmm(grad_target,
-                    GT.unsqueeze(0).expand(grad_target.size(0), *GT.size()))
-            grad_target = grad_target.view(s[0],s[1], input_tile_size, input_tile_size)
-            self.grad_target[index].grad.data = grad_target
-        return

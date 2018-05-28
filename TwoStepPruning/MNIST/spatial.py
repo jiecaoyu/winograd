@@ -212,7 +212,8 @@ if __name__=='__main__':
     criterion = nn.CrossEntropyLoss()
 
     if args.prune:
-        mask = utils.mask.Mask(model, args.threshold, [1], winograd=args.winograd_structured)
+        mask = utils.mask.Mask(model, args.threshold, [1],
+                winograd_structured=args.winograd_structured)
 
     if args.evaluate:
         test(evaluate=True)

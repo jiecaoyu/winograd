@@ -17,6 +17,19 @@ cwd = os.getcwd()
 sys.path.append(cwd + '/../')
 import utils
 
+def load_state(model, state_dict):
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key])
+        elif key.replace('module.','') in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict[key.replace('module.','')])
+        elif 'module.'+key in state_dict_keys:
+            cur_state_dict[key].copy_(state_dict['module.'+key])
+    
+    return
+
 def load_state_normal(model, state_dict):
     state_dict_keys = state_dict.keys()
     cur_state_dict = model.state_dict()
@@ -77,12 +90,9 @@ def train(epoch):
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
-        # if args.prune:
-        #     mask.mask_grad()
         if args.prune:
-            grad_optimizer.step_prune(mask)
-        else:
-            grad_optimizer.step()
+            mask.mask_grad()
+        grad_optimizer.step()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -153,8 +163,8 @@ if __name__=='__main__':
             help='how many batches to wait before logging training status')
     parser.add_argument('--arch', action='store', default='LeNet_5',
             help='the MNIST network structure: LeNet_5 | LeNet_5_3x3')
-    parser.add_argument('--pretrained_normal', action='store', default=None,
-            help='pretrained_normal model')
+    parser.add_argument('--pretrained', action='store', default=None,
+            help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
     
@@ -165,8 +175,8 @@ if __name__=='__main__':
             help='pruning threshold')
     parser.add_argument('--stage', type=int, default=0,
             help='pruning stage')
-    parser.add_argument('--winograd-structured', action='store_true', default=False,
-            help='enable winograd-driven structured pruning')
+    parser.add_argument('--pretrained_normal', action='store', default=None,
+            help='pretrained_normal model')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -203,6 +213,10 @@ if __name__=='__main__':
         pretrained_model = torch.load(args.pretrained_normal)
         best_acc = pretrained_model['acc']
         load_state_normal(model, pretrained_model['state_dict'])
+    elif args.pretrained:
+        pretrained_model = torch.load(args.pretrained)
+        best_acc = pretrained_model['acc']
+        load_state(model, pretrained_model['state_dict'])
     else:
         best_acc = 0.0
         if args.prune:
@@ -231,8 +245,7 @@ if __name__=='__main__':
     grad_optimizer = utils.grad_compute.GradOptimizer(model)
 
     if args.prune:
-        mask = Mask(model, args.threshold, gamma=1)
-        mask.print_info()
+        mask = utils.mask.Mask(model, args.threshold, [1], winograd_domain=True)
 
     if args.evaluate:
         test(evaluate=True)
