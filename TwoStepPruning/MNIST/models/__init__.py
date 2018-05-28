@@ -1,1 +1,2 @@
 import LeNet_5
+import LeNet_5_winograd
