@@ -5,7 +5,7 @@ import torch.nn as nn
 from . import para
 
 class Mask():
-    def __init__(self, model, threshold=0.0, prune_list=None, normal=True):
+    def __init__(self, model, threshold=0.0, prune_list=None, winograd=False):
         '''
         initialize the mask
         '''
@@ -14,8 +14,10 @@ class Mask():
         self.model = model
         self.prune_list = prune_list
         self.threshold = threshold
-        if normal:
+        if not winograd:
             self.mask_list = self.mask_normal(model, threshold, prune_list)
+        else:
+            self.mask_list = self.mask_winograd(model, threshold, prune_list)
         self.print_mask_info()
         self.print_mask_info_winograd()
         return
@@ -32,6 +34,44 @@ class Mask():
                 if count in prune_list:
                     tmp_mask = m.weight.data.abs().lt(threshold).float()
                     mask_list[count] = tmp_mask
+                count += 1
+        return mask_list
+
+    def mask_winograd(self, model, threshold, prune_list):
+        '''
+        generate mask for normal weights but structured for winograd domain
+        '''
+        mask_list = {}
+        count = 0
+        print('Perform winograd-driven structured pruning in spatial domain ...')
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d):
+                if count in prune_list:
+                    tmp_weight = m.weight.data.abs()
+                    tmp_mask = tmp_weight.lt(-1.0)
+                    if tmp_weight.shape[2] == 5:
+                        S = torch.from_numpy(para.S_4x4_5x5).float()
+                    else:
+                        raise Exception ('The kernel size is not supported.')
+                    if tmp_weight.is_cuda:
+                        S = S.cuda()
+                    for i in range(S.shape[0]):
+                        S_piece = S[i].view(tmp_weight.shape[2],
+                                tmp_weight.shape[2])
+                        mask_piece = S_piece.gt(0.0)
+                        tmp_weight_masked = tmp_weight.mul(
+                                mask_piece.unsqueeze(0).unsqueeze(0).float())
+                        tmp_weight_masked = tmp_weight_masked.view(
+                                tmp_weight_masked.shape[0],
+                                tmp_weight_masked.shape[1],
+                                -1)
+                        tmp_weight_masked,_ = torch.max(
+                                tmp_weight_masked, dim=2)
+                        tmp_weight_masked = tmp_weight_masked.lt(threshold)
+                        mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
+                                .mul(mask_piece.unsqueeze(0).unsqueeze(1))
+                        tmp_mask = tmp_mask | mask_piece
+                    mask_list[count] = tmp_mask.float()
                 count += 1
         return mask_list
 

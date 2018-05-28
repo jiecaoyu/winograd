@@ -140,6 +140,8 @@ if __name__=='__main__':
             help='pruning threshold')
     parser.add_argument('--stage', type=int, default=0,
             help='pruning stage')
+    parser.add_argument('--winograd-structured', action='store_true', default=False,
+            help='enable winograd-driven structured pruning')
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -210,7 +212,7 @@ if __name__=='__main__':
     criterion = nn.CrossEntropyLoss()
 
     if args.prune:
-        mask = utils.mask.Mask(model, args.threshold, [1])
+        mask = utils.mask.Mask(model, args.threshold, [1], winograd=args.winograd_structured)
 
     if args.evaluate:
         test(evaluate=True)
