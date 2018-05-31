@@ -195,16 +195,10 @@ if __name__=='__main__':
     base_lr = 0.1
     
     for key, value in param_dict.items():
-        if 'mask' in key:
-            params += [{'params':[value], 'lr': args.lr,
-                'momentum':args.momentum,
-                'weight_decay': 0.0,
-                'key':key}]
-        else:
-            params += [{'params':[value], 'lr': args.lr,
-                'momentum':args.momentum,
-                'weight_decay': args.weight_decay,
-                'key':key}]
+        params += [{'params':[value], 'lr': args.lr,
+            'momentum':args.momentum,
+            'weight_decay': args.weight_decay,
+            'key':key}]
     
     optimizer = optim.SGD(params, lr=args.lr, momentum=args.momentum,
             weight_decay=args.weight_decay)

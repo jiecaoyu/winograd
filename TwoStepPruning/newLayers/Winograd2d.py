@@ -46,7 +46,7 @@ class Winograd2d(nn.Module):
         else:
             BT = utils.para.BT_4x4_3x3
             AT = utils.para.AT_4x4_3x3
-            G = torch.from_numpy(G_4x4_3x3).float()
+            G = torch.from_numpy(utils.para.G_4x4_3x3).float()
         self.register_buffer('BT', torch.from_numpy(BT).float())
         self.register_buffer('AT', torch.from_numpy(AT).float())
 

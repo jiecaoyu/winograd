@@ -60,6 +60,8 @@ class Mask():
                     tmp_mask = tmp_weight.lt(-1.0)
                     if tmp_weight.shape[2] == 5:
                         S = torch.from_numpy(para.S_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        S = torch.from_numpy(para.S_4x4_3x3).float()
                     else:
                         raise Exception ('The kernel size is not supported.')
                     if tmp_weight.is_cuda:
@@ -167,6 +169,8 @@ class Mask():
                     tmp_weight = tmp_weight.mul(1.0 - self.mask_list[count])
                     if tmp_weight.shape[2] == 5:
                         G = torch.from_numpy(para.G_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        G = torch.from_numpy(para.G_4x4_3x3).float()
                     else:
                         raise Exception ('The kernel size is not supported.')
                     tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])

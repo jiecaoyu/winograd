@@ -56,6 +56,8 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
         help='evaluate model on validation set')
 parser.add_argument('--pretrained', default='', type=str, metavar='PRE',
         help='pretrained model')
+parser.add_argument('--pretrained_normal', default='', type=str, metavar='PRE',
+        help='pretrained_normal model')
 parser.add_argument('--no-cuda', action='store_true', default=False,
         help='disables CUDA training')
 
@@ -79,7 +81,7 @@ def main():
 
     # create model
     if args.arch=='alexnet':
-        model = models.alexnet.alexnet()
+        model = models.alexnet_winograd.alexnet_winograd()
         input_size = 227
     else:
         raise Exception('Model not supported yet')
@@ -116,6 +118,13 @@ def main():
             print("=> loading pretrained model '{}'".format(args.pretrained))
             checkpoint = torch.load(args.pretrained)
             load_state(model, checkpoint['state_dict'])
+        else:
+            print("=> no pretrained model found at '{}'".format(args.resume))
+    elif args.pretrained_normal:
+        if os.path.isfile(args.pretrained_normal):
+            print("=> loading pretrained model '{}'".format(args.pretrained_normal))
+            checkpoint = torch.load(args.pretrained_normal)
+            load_state_normal(model, checkpoint['state_dict'])
         else:
             print("=> no pretrained model found at '{}'".format(args.resume))
     else:
@@ -166,9 +175,11 @@ def main():
     
     if args.prune:
         mask = utils.mask.Mask(model, args.threshold, [1, 2, 3, 4],
-                winograd_structured=args.winograd_structured)
+                winograd_domain=True)
     else:
         mask = None
+
+    grad_optimizer = utils.grad_compute.GradOptimizer(model)
 
     if args.evaluate:
         validate(val_loader, model, criterion, mask)
@@ -178,7 +189,7 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, mask)
+        train(train_loader, model, criterion, optimizer, epoch, mask, grad_optimizer)
 
         # evaluate on validation set
         prec1 = validate(val_loader, model, criterion, mask)
@@ -196,7 +207,8 @@ def main():
 
     return
 
-def train(train_loader, model, criterion, optimizer, epoch, mask=None):
+def train(train_loader, model, criterion, optimizer, epoch, mask=None, grad_optimizer=None):
+    assert(grad_optimizer != None), 'winograd training needs to the grad_optimizer'
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -231,6 +243,9 @@ def train(train_loader, model, criterion, optimizer, epoch, mask=None):
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
+        if args.prune:
+            mask.mask_grad()
+        grad_optimizer.step()
         optimizer.step()
 
         # measure elapsed time
@@ -297,13 +312,13 @@ def validate(val_loader, model, criterion, mask=None):
 
 def save_checkpoint(state, is_best):
     if args.prune:
-        filename='saved_models/checkpoint.prune.' + str(args.stage) + '.pth.tar'
+        filename='saved_models/checkpoint.winograd.prune.' + str(args.stage) + '.pth.tar'
     else:
-        filename='saved_models/checkpoint.pth.tar'
+        filename='saved_models/checkpoint.winograd.pth.tar'
     subprocess.call('mkdir saved_models -p', shell=True)
     torch.save(state, filename)
     if is_best and (not args.prune):
-        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
+        shutil.copyfile(filename, 'saved_models/model_best.winograd.pth.tar')
     return
 
 class AverageMeter(object):
@@ -359,6 +374,45 @@ def load_state(model, state_dict):
     for key in cur_state_dict:
         if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
             cur_state_dict[key].copy_(state_dict[key.replace('module.', '')])
+    return
+
+def load_state_normal(model, state_dict):
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in state_dict_keys:
+        if 'module' in key:
+            state_dict[key.replace('module.', '')] = state_dict[key]
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
+            loaded_weight = state_dict[key.replace('module.', '')]
+            if cur_state_dict[key].shape != loaded_weight.shape:
+                print(loaded_weight.shape)
+                kernel_size = state_dict[key].shape[3]
+                if kernel_size == 5:
+                    G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+                    BT = torch.from_numpy(utils.para.BT_4x4_5x5).float()
+                elif kernel_size == 3:
+                    G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+                    BT = torch.from_numpy(utils.para.BT_4x4_3x3).float()
+                else:
+                    raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
+                weight = state_dict[key]
+                weight_t = weight.view(weight.shape[0] * weight.shape[1],
+                        kernel_size, kernel_size)
+                if weight.is_cuda:
+                    G = G.cuda()
+                weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                        weight_t)
+                GT = G.transpose(0, 1)
+                weight_t = torch.bmm(weight_t,
+                        GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+                weight_t = weight_t.view(weight.shape[0], weight.shape[1],
+                        BT.shape[0], BT.shape[1])
+                cur_state_dict[key].copy_(weight_t)
+            else:
+                cur_state_dict[key].copy_(state_dict[key])
     return
 
 if __name__ == '__main__':
