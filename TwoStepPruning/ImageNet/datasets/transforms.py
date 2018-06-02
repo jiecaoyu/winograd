@@ -67,7 +67,7 @@ class Normalize(object):
         mean (sequence): Sequence of means for R, G, B channels respecitvely.
     """
 
-    def __init__(self, mean=None, meanfile=None):
+    def __init__(self, mean=None, std=None, meanfile=None):
         if mean:
             self.mean = mean
         else:
@@ -76,6 +76,8 @@ class Normalize(object):
             blob.ParseFromString(data)
             arr = np.array(caffe.io.blobproto_to_array(blob))
             self.mean = torch.from_numpy(arr[0].astype('float32'))
+        if std:
+            self.std = std
 
     def __call__(self, tensor):
         """
@@ -86,8 +88,12 @@ class Normalize(object):
             Tensor: Normalized image.
         """
         # TODO: make efficient
-        for t, m in zip(tensor, self.mean):
-            t.sub_(m)
+        if self.std:
+            for t, m, s in zip(tensor, self.mean, self.std):
+                t.sub_(m).div_(s)
+        else:
+            for t, m in zip(tensor, self.mean):
+                t.sub_(m)
         return tensor
 
 
