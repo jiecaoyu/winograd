@@ -1,7 +1,10 @@
+#!/usr/bin/env python2
+from __future__ import absolute_import, division, print_function, unicode_literals
 import argparse
 import os
 import shutil
 import time
+import subprocess
 
 import torch
 import torch.nn as nn
@@ -14,6 +17,13 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+
+# import utils
+import os
+import sys
+cwd = os.getcwd()
+sys.path.append(cwd + '/../../')
+import utils
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -47,8 +57,6 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
 parser.add_argument('--world-size', default=1, type=int,
                     help='number of distributed processes')
 parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
@@ -56,6 +64,19 @@ parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
 parser.add_argument('--dist-backend', default='gloo', type=str,
                     help='distributed backend')
 
+# pruning arguments
+parser.add_argument('--prune', action='store_true', default=False,
+        help='enable pruning')
+parser.add_argument('--threshold', type=float, default=0.0,
+        help='pruning threshold')
+parser.add_argument('--stage', type=int, default=0,
+        help='pruning stage')
+parser.add_argument('--winograd-structured', action='store_true', default=False,
+        help='enable winograd-driven structured pruning')
+parser.add_argument('--pretrained', action='store', default=None,
+        help='pretrained model')
+parser.add_argument('--percentage', type=float, default=0.0,
+        help='pruning percentage')
 best_prec1 = 0
 
 
@@ -71,8 +92,13 @@ def main():
 
     # create model
     if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True)
+        if os.path.isfile(args.pretrained):
+            print("=> loading pretrained model '{}'".format(args.pretrained))
+            model = models.__dict__[args.arch]()
+            checkpoint = torch.load(args.pretrained)
+            load_state(model, checkpoint['state_dict'])
+        else:
+            print("=> no pretrained model found at '{}'".format(args.resume))
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
@@ -107,6 +133,9 @@ def main():
                   .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+
+    if (not args.resume) and (not args.pretrained) and args.prune:
+        raise Exception ('Pruning requires pretrained model.')
 
     cudnn.benchmark = True
 
@@ -143,9 +172,19 @@ def main():
         ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
+    
+    print(model)
+
+    if args.prune:
+        mask = utils.mask.Mask(model, args.threshold,
+                [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
+                winograd_structured=args.winograd_structured,
+                percentage=args.percentage)
+    else:
+        mask = None
 
     if args.evaluate:
-        validate(val_loader, model, criterion)
+        validate(val_loader, model, criterion, mask)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -154,10 +193,10 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch, mask)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        prec1 = validate(val_loader, model, criterion, mask)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
@@ -171,7 +210,7 @@ def main():
         }, is_best)
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, mask=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -185,6 +224,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
     for i, (input, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
+        if args.prune:
+            mask.apply()
 
         target = target.cuda(non_blocking=True)
 
@@ -218,7 +259,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
 
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, mask):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -227,6 +268,8 @@ def validate(val_loader, model, criterion):
     # switch to evaluate mode
     model.eval()
 
+    if args.prune:
+        mask.apply()
     with torch.no_grad():
         end = time.time()
         for i, (input, target) in enumerate(val_loader):
@@ -261,10 +304,16 @@ def validate(val_loader, model, criterion):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best):
+    if args.prune:
+        filename='saved_models/checkpoint.prune.' + str(args.stage) + '.pth.tar'
+    else:
+        filename='saved_models/checkpoint.pth.tar'
+    subprocess.call('mkdir saved_models -p', shell=True)
     torch.save(state, filename)
-    if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+    if is_best and (not args.prune):
+        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
+    return
 
 
 class AverageMeter(object):
@@ -308,6 +357,17 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
+def load_state(model, state_dict):
+    state_dict_keys = state_dict.keys()
+    for key in state_dict_keys:
+        if 'module' in key:
+            state_dict[key.replace('module.', '')] = state_dict[key]
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
+            cur_state_dict[key].copy_(state_dict[key.replace('module.', '')])
+    return
 
 if __name__ == '__main__':
     main()

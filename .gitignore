@@ -2,3 +2,4 @@
 *.pth.tar
 *data
 *log*
+*step*
