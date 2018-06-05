@@ -16,7 +16,7 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torchvision.models as models
+# import torchvision.models as models
 
 # import utils
 import os
@@ -24,19 +24,17 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd + '/../../')
 import utils
+import self_models
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+# model_names = sorted(name for name in models.__dict__
+#     if name.islower() and not name.startswith("__")
+#     and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--data', metavar='DIR', default='/data/tmp/imagenet_raw/',
                     help='path to dataset')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
+                    help='model architecture: (default: resnet18)')
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -64,7 +62,6 @@ parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
 parser.add_argument('--dist-backend', default='gloo', type=str,
                     help='distributed backend')
 
-    
 # pruning arguments
 parser.add_argument('--prune', action='store_true', default=False,
         help='enable pruning')
@@ -95,14 +92,14 @@ def main():
     if args.pretrained:
         if os.path.isfile(args.pretrained):
             print("=> loading pretrained model '{}'".format(args.pretrained))
-            model = models.__dict__[args.arch]()
+            model = self_models.__dict__[args.arch]()
             checkpoint = torch.load(args.pretrained)
             load_state(model, checkpoint['state_dict'])
         else:
             print("=> no pretrained model found at '{}'".format(args.resume))
     else:
         print("=> creating model '{}'".format(args.arch))
-        model = models.__dict__[args.arch]()
+        model = self_models.__dict__[args.arch]()
 
     if not args.distributed:
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
