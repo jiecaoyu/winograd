@@ -150,4 +150,5 @@ class Winograd2d(nn.Module):
 
         if additinal_padding:
             y = y[:, :, 0:output_width, 0:output_width]
+        y = y.contiguous()
         return y
