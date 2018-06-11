@@ -46,6 +46,7 @@ class SGD_newWD(Optimizer):
                     continue
                 d_p = p.grad.data
                 if weight_decay != 0:
+                    d_p.add_(weight_decay, p.data)
                     if winograd:
                         weight = p.data
                         assert(len(weight.shape) == 4), 'targeting conv layers only.'
@@ -65,8 +66,6 @@ class SGD_newWD(Optimizer):
                                 G.unsqueeze(0).expand(weight.shape[0], *G.size()))
                         weight = weight.view(p.data.shape)
                         d_p.add_(weight_decay, weight)
-                    else:
-                        d_p.add_(weight_decay, p.data)
                 if momentum != 0:
                     param_state = self.state[p]
                     if 'momentum_buffer' not in param_state:
