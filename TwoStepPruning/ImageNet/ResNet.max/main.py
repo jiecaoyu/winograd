@@ -75,6 +75,8 @@ parser.add_argument('--pretrained', action='store', default=None,
         help='pretrained model')
 parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
+parser.add_argument('--generate-mask', action='store_true', default=False,
+        help='whether save the spatial mask')
 best_prec1 = 0
 
 
@@ -177,7 +179,7 @@ def main():
         mask = utils.mask.Mask(model, args.threshold,
                 [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
                 winograd_structured=args.winograd_structured,
-                percentage=args.percentage)
+                percentage=args.percentage, generate_mask=args.generate_mask)
     else:
         mask = None
 

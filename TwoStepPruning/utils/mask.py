@@ -8,11 +8,12 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd + '/../')
 import newLayers
+import pickle
 
 class Mask():
     def __init__(self, model, threshold=0.0,
             prune_list=None, winograd_structured=False, winograd_domain=False,
-            percentage=0.0):
+            percentage=0.0, generate_mask=False):
         '''
         initialize the mask
         '''
@@ -31,6 +32,11 @@ class Mask():
                 else:
                     self.mask_list =\
                             self.mask_winograd_structured_percentage(model, percentage, prune_list)
+            # save the mask_list
+            if generate_mask:
+                mask_name = 'spatial_mask.pth.tar'
+                # pickle.dump(self.mask_list, open(mask_name, 'w'))
+                torch.save(self.mask_list, mask_name)
         else:
             if self.percentage == 0.0:
                 self.mask_list = self.mask_winograd_domain(model, threshold, prune_list)
@@ -222,6 +228,7 @@ class Mask():
                             raise Exception ('kernel_size currently not supported')
                         if m.weight.data.is_cuda:
                             threshold_tensor = threshold_tensor.cuda()
+                        threshold_tensor = threshold_tensor / threshold_tensor.min()
                         tmp_mask = m.weight.data.clone().abs()\
                                 .lt(threshold_tensor.pow(-1.0).mul(threshold)).float()
                         pruned = tmp_mask.sum()

@@ -71,8 +71,10 @@ parser.add_argument('--stage', type=int, default=0,
         help='pruning stage')
 parser.add_argument('--pretrained', action='store', default=None,
         help='pretrained model')
-parser.add_argument('--pretrained_normal', action='store', default=None,
+parser.add_argument('--pretrained-normal', action='store', default=None,
         help='pretrained_normal model')
+parser.add_argument('--spatial-mask', action='store', default=None,
+        help='whether include a spatial mask')
 parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
 best_prec1 = 0
@@ -181,10 +183,12 @@ def main():
     
     print(model)
 
-    grad_optimizer = utils.grad_compute.GradOptimizer(model)
+    prune_list = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19]
+    grad_optimizer = utils.grad_compute.GradOptimizer(model, args.spatial_mask,
+            prune_list=prune_list)
     if args.prune:
         mask = utils.mask.Mask(model,
-                prune_list=[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
+                prune_list=prune_list,
                 winograd_domain = True, percentage=args.percentage)
     else:
         mask = None
