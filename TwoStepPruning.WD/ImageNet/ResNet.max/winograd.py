@@ -176,14 +176,14 @@ def main():
     print(model)
 
     if args.prune:
-        mask = utils.mask.Mask(model, percentage=args.percentage)
+        mask = utils.mask.Mask(model, percentage=args.percentage, winograd_domain=True)
     else:
         mask = None
 
     if args.evaluate:
         validate(val_loader, model, criterion, mask)
         return
-
+    
     # adjust training strength
     # for m in model.modules():
     #     if isinstance(m, newLayers.Winograd2d.Winograd2d):
@@ -243,8 +243,8 @@ def train(train_loader, model, criterion, optimizer, epoch, mask=None):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        # if args.prune:
-        #     mask.regularize_grad()
+        if args.prune:
+            mask.regularize_grad()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -311,13 +311,13 @@ def validate(val_loader, model, criterion, mask):
 
 def save_checkpoint(state, is_best):
     if args.prune:
-        filename='saved_models/checkpoint.prune.' + str(args.stage) + '.pth.tar'
+        filename='saved_models/checkpoint.winograd.prune.' + str(args.stage) + '.pth.tar'
     else:
-        filename='saved_models/checkpoint.pth.tar'
+        filename='saved_models/checkpoint.winograd.pth.tar'
     subprocess.call('mkdir saved_models -p', shell=True)
     torch.save(state, filename)
     if is_best and (not args.prune):
-        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
+        shutil.copyfile(filename, 'saved_models/model_best.winograd.pth.tar')
     return
 
 

@@ -70,6 +70,8 @@ class Winograd2d(nn.Module):
             self.bias.data.uniform_(-stdv, stdv)
 
         self.Mask.zero_().add_(1.0)
+        self.threshold = 1e-5
+        self.strength = 1.0
         return
 
     def forward(self, x):
@@ -112,8 +114,9 @@ class Winograd2d(nn.Module):
                     GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
             weight_t = weight_t.view(self.weight.shape[0], self.weight.shape[1],
                     self.BT.shape[0], self.BT.shape[1])
-            
+
             weight_t = weight_t.mul(1.0 - self.Mask)
+            # weight_t[weight_t.abs().lt(self.threshold)] = 0.0
 
             weight_size = list(weight_t.shape)
             weight_size = [self.groups, int(self.out_channels / self.groups)] \
@@ -152,7 +155,7 @@ class Winograd2d(nn.Module):
                     x_size[2], x_size[3])
             y_t = y_t.permute(4, 0, 3, 5, 6, 1, 2).contiguous()
             y_t_size = y_t.size()
-            y_t = y_t.view(-1, 
+            y_t = y_t.view(-1,
                     self.input_tile_size, self.input_tile_size)
 
             y = torch.bmm(self.AT.unsqueeze(0).expand(y_t.size()[0], *self.AT.size()), y_t)
@@ -173,7 +176,6 @@ class Winograd2d(nn.Module):
         return y
 
     def regularize_grad(self):
-        stength = 1.0
         weight_t = self.weight.view(-1, self.weight.shape[2], self.weight.shape[3])
         weight_t = torch.bmm(self.G.unsqueeze(0).expand(weight_t.size(0), *self.G.size()),
                 weight_t)
@@ -181,7 +183,7 @@ class Winograd2d(nn.Module):
         weight_t = torch.bmm(weight_t,
                 GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
         
-        weight_t = weight_t.mul(self.Mask.view(-1, self.Mask.shape[2], self.Mask.shape[3])).mul(stength)
+        weight_t = weight_t.mul(self.Mask.view(-1, self.Mask.shape[2], self.Mask.shape[3])).mul(self.strength)
         weight_t = torch.bmm(GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()),
                 weight_t)
         weight_t = torch.bmm(weight_t,
@@ -190,6 +192,29 @@ class Winograd2d(nn.Module):
         weight_t = weight_t.view(self.weight.shape[0], self.weight.shape[1],
                 self.weight.shape[2], self.weight.shape[3])
 
-        self.weight.grad.data = self.weight.grad.data.add(weight_t)
+        # self.weight.grad.data = self.weight.grad.data.add(weight_t)
+        self.weight.data = self.weight.data.add(-weight_t)
 
+        return
+
+    def print_sparsity_winograd(self):
+        if self.kernel_size == 5:
+            G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+        elif self.kernel_size == 3:
+            G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+        else:
+            raise Exception ('Kernel size of ' + str(self.kernel_size) + " is not supported.")
+        if self.weight.is_cuda:
+            G = G.cuda()
+        weight_t = self.weight.view(-1, self.weight.shape[2], self.weight.shape[3])
+        weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                weight_t)
+        GT = G.transpose(0, 1)
+        weight_t = torch.bmm(weight_t,
+                GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+        weight_t = weight_t.view(self.weight.shape[0], self.weight.shape[1],
+                self.BT.shape[0], self.BT.shape[1])
+        tmp_mask = weight_t.abs().lt(self.threshold)
+        print('==> {:8d} / {:8d} = {:.4f}'.format(tmp_mask.sum(), tmp_mask.nelement(),
+            float(tmp_mask.sum()) / tmp_mask.nelement()))
         return
