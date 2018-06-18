@@ -243,8 +243,8 @@ def train(train_loader, model, criterion, optimizer, epoch, mask=None):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        # if args.prune:
-        #     mask.regularize_grad()
+        if args.prune:
+            mask.regularize_grad()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
