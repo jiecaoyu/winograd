@@ -77,6 +77,10 @@ parser.add_argument('--pretrained', action='store', default=None,
         help='pretrained model')
 parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
+parser.add_argument('--generate-mask', action='store_true', default=False,
+        help='generate and save the mask')
+parser.add_argument('--prev-mask', action='store', default=None,
+        help='previous mask')
 best_prec1 = 0
 
 
@@ -177,7 +181,10 @@ def main():
     print(model)
 
     if args.prune:
-        mask = utils.mask.Mask(model, percentage=args.percentage)
+        mask = utils.mask.Mask(model, percentage=args.percentage, prev_mask=args.prev_mask)
+        if args.generate_mask and (not args.evaluate):
+            subprocess.call('mkdir saved_models -p', shell=True)
+            torch.save(mask.mask_list, 'saved_models/spatial_mask.'+str(args.stage))
     else:
         mask = None
 

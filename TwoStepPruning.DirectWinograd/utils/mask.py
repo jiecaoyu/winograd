@@ -10,7 +10,7 @@ sys.path.append(cwd + '/../')
 import newLayers
 
 class Mask():
-    def __init__(self, model, percentage=0.0, winograd_domain=False):
+    def __init__(self, model, percentage=0.0, winograd_domain=False, prev_mask=None):
         '''
         initialize the mask
         '''
@@ -19,17 +19,20 @@ class Mask():
         if winograd_domain:
             self.mask_list = self.mask_percentage_winograd_domain(model, percentage)
         else:
-            self.mask_list = self.mask_winograd_structured_percentage(model, percentage)
+            self.mask_list = self.mask_winograd_structured_percentage(model, percentage, prev_mask)
         return
 
-    def mask_winograd_structured_percentage(self, model, percentage):
+    def mask_winograd_structured_percentage(self, model, percentage, prev_mask):
         '''
         generate mask for normal weights but structured for winograd domain
         the threshold is determined based on specified pruning percentage
         '''
         mask_list = {}
+        count = 0
         print('Perform winograd-driven structured pruning in spatial domain ...')
         assert(percentage >= 0), 'percentage must be positive or zero.'
+        if prev_mask:
+            prev_mask_list = torch.load(prev_mask)
         for m in model.modules():
             if isinstance(m, newLayers.Winograd2d.Winograd2d):
                 left = 0.0
@@ -47,6 +50,17 @@ class Mask():
                         raise Exception ('The kernel size is not supported.')
                     if tmp_weight.is_cuda:
                         S = S.cuda()
+                    # apply the previous mask
+                    if prev_mask:
+                        prev_mask_tmp = prev_mask_list[count]
+                        prev_mask_tmp = prev_mask_tmp.view(prev_mask_tmp.shape[0], prev_mask_tmp.shape[1], -1)
+                        for i in range(S.shape[0]):
+                            prev_mask_tmp_piece = prev_mask_tmp[:, :, i].unsqueeze(2).unsqueeze(3)
+                            S_piece = S[i].view(tmp_weight.shape[2],
+                                    tmp_weight.shape[2])
+                            mask_piece = S_piece.gt(0.0)
+                            mask_piece = mask_piece.float().unsqueeze(0).unsqueeze(1).mul(prev_mask_tmp_piece)
+                            tmp_weight.mul_(1.0 - mask_piece)
                     for i in range(S.shape[0]):
                         S_piece = S[i].view(tmp_weight.shape[2],
                                 tmp_weight.shape[2])
@@ -86,11 +100,25 @@ class Mask():
                             G.shape[0], G.shape[0])
                     pruned = tmp_weight_t.eq(0.0).sum()
                     total = tmp_weight_t.nelement()
-                    del tmp_weight
                     tmp_percentage = float(pruned) / total
                     if abs(percentage - tmp_percentage) < 0.0001:
-                        m.weight.data.mul_(1.0 - tmp_mask.float())
+                        if prev_mask:
+                            cur_mask = tmp_weight_t.eq(0.0).float()
+                            diff_mask = (cur_mask != prev_mask_list[count])
+                            diff_mask = diff_mask.view(diff_mask.shape[0], diff_mask.shape[1], -1).float()
+                            print(diff_mask.sum())
+                            for i in range(S.shape[0]):
+                                diff_mask_piece = diff_mask[:, :, i].unsqueeze(2).unsqueeze(3)
+                                S_piece = S[i].view(tmp_weight.shape[2],
+                                        tmp_weight.shape[2])
+                                mask_piece = S_piece.gt(0.0)
+                                mask_piece = mask_piece.float().unsqueeze(0).unsqueeze(1).mul(diff_mask_piece)
+                                m.weight.data.mul_(1.0 - mask_piece)
+                        else:
+                            m.weight.data.mul_(1.0 - tmp_mask.float())
                         m.Mask.copy_(tmp_weight_t.eq(0.0).float())
+                        mask_list[count] = m.Mask.clone()
+                        count += 1
                         break
                     elif tmp_percentage > percentage:
                         right = threshold
