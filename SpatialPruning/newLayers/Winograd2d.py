@@ -1,69 +1,15 @@
-from __future__ import print_function
-from torch.autograd import Variable
-
+#!/usr/bin/env python2
+from __future__ import absolute_import, division, print_function, unicode_literals
 import torch.nn as nn
 import torch
 import numpy
 import math
+import os
+import sys
+cwd = os.getcwd()
+sys.path.append(cwd + '/../')
+import utils
 
-
-# set the kernels
-
-## kernel_size == 5
-G_4x4_5x5 = numpy.array([
-    [    1.,      0.,     0.,      0.,      0.],
-    [-2./9.,  -2./9., -2./9.,  -2./9.,  -2./9.],
-    [-2./9.,   2./9., -2./9.,   2./9.,  -2./9.],
-    [1./90.,  1./45., 2./45.,  4./45.,  8./45.],
-    [1./90., -1./45., 2./45., -4./45.,  8./45.],
-    [4./45.,  2./45., 1./45.,  1./90., 1./180.],
-    [4./45., -2./45., 1./45., -1./90., 1./180.],
-    [    0.,      0.,     0.,      0.,      1.]]
-    )
-
-BT_4x4_5x5 = numpy.array([
-    [1.,   0.  ,  -21./4.,    0.  ,  21./4. ,    0. ,   -1.,  0.],
-    [0. ,  1.   ,   1.    ,-17./4. , -17./4. ,   1.  ,  1.  , 0.],
-    [0. ,  -1.  ,   1.    ,17./4.  , -17./4. ,  -1.  ,  1.  , 0.],
-    [0. , 1./2. ,   1./4. ,  -5./2.,   -5./4.,     2.,    1.,   0.],
-    [0. , -1./2.,   1./4. ,   5./2.,   -5./4.,    -2.,    1.,   0.],
-    [0. ,  2.   ,   4.    ,-5./2.  ,  -5.    , 1./2. ,  1.  , 0.],
-    [0. ,  -2.  ,   4.    , 5./2.  ,  -5.    ,-1./2. ,  1.  , 0.],
-    [0. ,  -1.  ,   0.    ,21./4.  ,   0.    ,-21./4.,  0.  , 1.]]
-    )
-
-AT_4x4_5x5 = numpy.array([
-    [1.,  1. , 1. ,  1.,  1. ,  8. , 8. ,  0.],
-    [0.,  1. , -1.,  2.,  -2.,  4. , -4.,  0.],
-    [0.,  1. , 1. ,  4.,  4. ,  2. , 2. ,  0.],
-    [0.,  1. , -1.,  8.,  -8.,  1. , -1.,  1.]]
-    )
-
-## kernel_size == 3
-G_4x4_3x3 = numpy.array([
-    [ 1./4.,      0.,     0.],
-    [-1./6.,  -1./6., -1./6.],
-    [-1./6.,   1./6., -1./6.],
-    [1./24.,  1./12.,  1./6.],
-    [1./24., -1./12.,  1./6.],
-    [    0.,      0.,    1.]]
-    )
-
-BT_4x4_3x3 = numpy.array([
-    [4.,  0., -5.,  0., 1., 0.],
-    [0., -4., -4.,  1., 1., 0.],
-    [0.,  4., -4., -1., 1., 0.],
-    [0., -2., -1.,  2., 1., 0.],
-    [0.,  2., -1., -2., 1., 0.],
-    [0.,  4.,  0., -5., 0., 1.]]
-    )
-
-AT_4x4_3x3 = numpy.array([
-    [1., 1.,  1., 1.,  1., 0.],
-    [0., 1., -1., 2., -2., 0.],
-    [0., 1.,  1., 4.,  4., 0.],
-    [0., 1., -1., 8., -8., 1.]]
-    )
 
 KernelSize2InputTileSize = {
         3 : 6,
@@ -84,23 +30,23 @@ class Winograd2d(nn.Module):
 
         assert((in_channels % groups == 0)), 'in_channels % groups != 0'
         self.weight = nn.Parameter(torch.FloatTensor(
-            out_channels, in_channels/groups,
+            out_channels, int(in_channels/groups),
             KernelSize2InputTileSize[kernel_size],
             KernelSize2InputTileSize[kernel_size]).normal_(0, 0.01))
         if self.need_bias:
-            self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(0, 0.01))
+            self.bias = nn.Parameter(torch.FloatTensor(out_channels).normal_(1, 0.01))
 
         # register buffers for parameter with no grad
         # use .float() to make sure tensors are 32-bit float numbers
         # self.register_buffer('G', torch.from_numpy(G_4x4_5x5).float())
         if kernel_size == 5:
-            BT = BT_4x4_5x5
-            AT = AT_4x4_5x5
-            G = torch.from_numpy(G_4x4_5x5).float()
+            BT = utils.para.BT_4x4_5x5
+            AT = utils.para.AT_4x4_5x5
+            G = torch.from_numpy(utils.para.G_4x4_5x5).float()
         else:
-            BT = BT_4x4_3x3
-            AT = AT_4x4_3x3
-            G = torch.from_numpy(G_4x4_3x3).float()
+            BT = utils.para.BT_4x4_3x3
+            AT = utils.para.AT_4x4_3x3
+            G = torch.from_numpy(utils.para.G_4x4_3x3).float()
         self.register_buffer('BT', torch.from_numpy(BT).float())
         self.register_buffer('AT', torch.from_numpy(AT).float())
 
@@ -112,16 +58,16 @@ class Winograd2d(nn.Module):
         n = in_channels * kernel_size * kernel_size
         stdv = 1. / math.sqrt(n)
         weight_normal = torch.zeros(
-                [out_channels, in_channels / groups, kernel_size, kernel_size],
+                [out_channels, int(in_channels / groups), kernel_size, kernel_size],
                 dtype=torch.float32).uniform_(-stdv, stdv)
-        weight_t = weight_normal.view(out_channels * in_channels / groups,
+        weight_t = weight_normal.view(int(out_channels * in_channels / groups),
                 kernel_size, kernel_size)
         weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
                 weight_t)
         GT = G.transpose(0, 1)
         weight_t = torch.bmm(weight_t,
                 GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
-        weight_t = weight_t.view(out_channels, in_channels / groups,
+        weight_t = weight_t.view(out_channels, int(in_channels / groups),
                 BT.shape[0], BT.shape[1])
         self.weight.data.copy_(weight_t)
 
@@ -151,7 +97,7 @@ class Winograd2d(nn.Module):
 
         # prepare the weights // use torch.bmm()
         weight_size = list(self.weight.shape)
-        weight_size = [self.groups, self.out_channels / self.groups] \
+        weight_size = [self.groups, int(self.out_channels / self.groups)] \
                 + weight_size[1:]
         weight_t = self.weight.view(weight_size)
 
@@ -167,7 +113,7 @@ class Winograd2d(nn.Module):
 
         # prepare the shape of the inputs and weights
         x_t = x_t.view(
-                [x_size[0], self.groups, x_size[1]/self.groups,\
+                [x_size[0], self.groups, int(x_size[1]/self.groups),\
                         x_size[2], x_size[3], x_size[4], x_size[5]])
 
         # calculate the output
@@ -175,15 +121,15 @@ class Winograd2d(nn.Module):
         weight_t = weight_t.permute(0, 3, 4, 1, 2)
         weight_t = weight_t.contiguous().view(
                 self.groups * self.input_tile_size * self.input_tile_size,
-                -1, self.in_channels / self.groups)
+                -1, int(self.in_channels / self.groups))
         x_t = x_t.permute(1, 5, 6, 2, 0, 3, 4)
         x_t = x_t.contiguous().view(
                 self.groups * self.input_tile_size * self.input_tile_size,
-                self.in_channels / self.groups, -1)
+                int(self.in_channels / self.groups), -1)
 
         y_t = torch.bmm(weight_t, x_t)
         y_t = y_t.view(self.groups, self.input_tile_size, self.input_tile_size,
-                self.out_channels / self.groups, x_size[0],
+                int(self.out_channels / self.groups), x_size[0],
                 x_size[2], x_size[3])
         y_t = y_t.permute(4, 0, 3, 5, 6, 1, 2).contiguous()
         y_t_size = y_t.size()
@@ -204,4 +150,5 @@ class Winograd2d(nn.Module):
 
         if additinal_padding:
             y = y[:, :, 0:output_width, 0:output_width]
+        y = y.contiguous()
         return y
