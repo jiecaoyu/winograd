@@ -40,36 +40,14 @@ class GradOptimizer():
         for index in range(len(self.grad_target)):
             if self.kernel_size[index] == 5:
                 G = torch.from_numpy(para.G_4x4_5x5).float().cuda()
+                mask_multi = torch.from_numpy(para.mask_multi_4x4_5x5).float().cuda()
             elif self.kernel_size[index] == 3:
                 G = torch.from_numpy(para.G_4x4_3x3).float().cuda()
+                mask_multi = torch.from_numpy(para.mask_multi_4x4_3x3).float().cuda()
+            mask_multi.div_(mask_multi.min())
             input_tile_size = self.input_tile_size[index]
             grad_target = self.grad_target[index].grad.data
-            GT = G.transpose(0, 1)
-            if not self.spatial_mask:
-                G = torch.matmul(G, GT)
-                s = grad_target.shape
-                grad_target = grad_target.view(-1, input_tile_size, input_tile_size)
-                grad_target = torch.bmm(G.unsqueeze(0).expand(grad_target.size(0), *G.size()),
-                        grad_target)
-                grad_target = torch.bmm(grad_target,
-                        G.unsqueeze(0).expand(grad_target.size(0), *G.size()))
-                grad_target = grad_target.view(s[0],s[1], input_tile_size, input_tile_size)
-            else:
-                s = grad_target.shape
-                grad_target = grad_target.view(-1, input_tile_size, input_tile_size)
-                grad_target = torch.bmm(GT.unsqueeze(0).expand(grad_target.size(0), *GT.size()),
-                        grad_target)
-                grad_target = torch.bmm(grad_target,
-                        G.unsqueeze(0).expand(grad_target.size(0), *G.size()))
-                tmp_spatial_mask = self.spatial_mask[self.prune_list[count]]
-                tmp_spatial_mask = tmp_spatial_mask.view(-1,
-                        tmp_spatial_mask.shape[2], tmp_spatial_mask.shape[3])
-                grad_target = grad_target.mul(1.0 - tmp_spatial_mask)
-                grad_target = torch.bmm(G.unsqueeze(0).expand(grad_target.size(0), *G.size()),
-                        grad_target)
-                grad_target = torch.bmm(grad_target,
-                        GT.unsqueeze(0).expand(grad_target.size(0), *GT.size()))
-                grad_target = grad_target.view(s[0],s[1], input_tile_size, input_tile_size)
+            grad_target.div_(mask_multi.pow(2.0).unsqueeze(0).unsqueeze(1))
             self.grad_target[index].grad.data = grad_target
             count += 1
         return

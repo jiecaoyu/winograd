@@ -252,8 +252,8 @@ def train(train_loader, model, criterion, optimizer, epoch, grad_optimizer, mask
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        if args.prune:
-            mask.mask_grad()
+        # if args.prune:
+        #     mask.mask_grad()
 
         grad_optimizer.step()
         optimizer.step()
