@@ -115,7 +115,7 @@ class Mask():
             if isinstance(m, nn.Conv2d):
                 if count in prune_list:
                     left = 0.0
-                    right = m.weight.data.max()
+                    right = m.weight.data.abs().max()
                     tmp_percentage = -1.0
                     while True:
                         threshold = (left + right) / 2.0

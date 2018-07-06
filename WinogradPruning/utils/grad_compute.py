@@ -47,7 +47,7 @@ class GradOptimizer():
             mask_multi.div_(mask_multi.min())
             input_tile_size = self.input_tile_size[index]
             grad_target = self.grad_target[index].grad.data
-            grad_target.div_(mask_multi.pow(2.0).unsqueeze(0).unsqueeze(1))
+            grad_target.div_(mask_multi.pow(1.5).unsqueeze(0).unsqueeze(1))
             self.grad_target[index].grad.data = grad_target
             count += 1
         return
