@@ -208,6 +208,7 @@ class Mask():
         generate mask for pruning in winograd domain
         '''
         mask_list = {}
+        self.threshold_list = {}
         count = 0
         print('Perform normal pruning in spatial domain ...')
         for m in model.modules():
@@ -242,6 +243,7 @@ class Mask():
                             left = threshold
                         print(tmp_percentage)
                     mask_list[count] = tmp_mask
+                    self.threshold_list[count] = threshold
                 count += 1
         return mask_list
 
