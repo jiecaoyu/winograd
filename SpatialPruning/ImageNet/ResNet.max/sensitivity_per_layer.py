@@ -65,11 +65,11 @@ parser.add_argument('--dist-backend', default='gloo', type=str,
 # pruning arguments
 parser.add_argument('--prune', action='store_true', default=False,
         help='enable pruning')
-parser.add_argument('--threshold-multi', type=float, default=0.0,
-        help='pruning threshold-multi')
+parser.add_argument('--threshold', type=float, default=0.0,
+        help='pruning threshold')
 parser.add_argument('--stage', type=int, default=0,
         help='pruning stage')
-parser.add_argument('--winograd-structured', action='store_true', default=False,
+parser.add_argument('--winograd-structured', action='store_true', default=True,
         help='enable winograd-driven structured pruning')
 parser.add_argument('--pretrained', action='store', default=None,
         help='pretrained model')
@@ -91,17 +91,8 @@ def main():
                                 world_size=args.world_size)
 
     # create model
-    if args.pretrained:
-        if os.path.isfile(args.pretrained):
-            print("=> loading pretrained model '{}'".format(args.pretrained))
-            model = self_models.__dict__[args.arch]()
-            checkpoint = torch.load(args.pretrained)
-            load_state(model, checkpoint['state_dict'])
-        else:
-            print("=> no pretrained model found at '{}'".format(args.resume))
-    else:
-        print("=> creating model '{}'".format(args.arch))
-        model = self_models.__dict__[args.arch]()
+    print("=> creating model '{}'".format(args.arch))
+    model = self_models.__dict__[args.arch]()
 
     if not args.distributed:
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
@@ -119,23 +110,6 @@ def main():
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
-
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']
-            best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
-
-    if (not args.resume) and (not args.pretrained) and args.prune:
-        raise Exception ('Pruning requires pretrained model.')
 
     cudnn.benchmark = True
 
@@ -174,92 +148,27 @@ def main():
         num_workers=args.workers, pin_memory=True)
     
     print(model)
+    if not args.pretrained:
+        raise Exception ('Pretrained model is required')
 
-    if args.prune:
-        mask = utils.mask.Mask(model, args.threshold_multi,
-                [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
-                winograd_structured=args.winograd_structured,
-                percentage=args.percentage, generate_mask=args.generate_mask)
-    else:
-        mask = None
+    checkpoint = torch.load(args.pretrained)
+    prune_list = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19]
+    subprocess.call('rm sensitivity.log', shell=True)
+    for prune_item in prune_list:
+        for point in range(10, 100, 5):
+            load_state(model, checkpoint['state_dict'])
+            percentage = float(point) / 100.0
+            print(percentage)
 
-    if args.evaluate:
-        validate(val_loader, model, criterion, mask)
-        return
+            mask = utils.mask.Mask(model, args.threshold,
+                    [prune_item],
+                    winograd_structured=args.winograd_structured,
+                    percentage=percentage, generate_mask=args.generate_mask)
 
-    for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-        adjust_learning_rate(optimizer, epoch)
-
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, mask)
-
-        # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion, mask)
-
-        # remember best prec@1 and save checkpoint
-        is_best = prec1 > best_prec1
-        best_prec1 = max(prec1, best_prec1)
-        save_checkpoint({
-            'epoch': epoch + 1,
-            'arch': args.arch,
-            'state_dict': model.state_dict(),
-            'best_prec1': best_prec1,
-            'optimizer' : optimizer.state_dict(),
-        }, is_best)
-
-
-def train(train_loader, model, criterion, optimizer, epoch, mask=None):
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
-
-    # switch to train mode
-    model.train()
-
-    end = time.time()
-    for i, (input, target) in enumerate(train_loader):
-        # measure data loading time
-        data_time.update(time.time() - end)
-        if args.prune:
             mask.apply()
+            validate(val_loader, model, criterion, mask, percentage, prune_item)
 
-        target = target.cuda(non_blocking=True)
-
-        # compute output
-        output = model(input)
-        loss = criterion(output, target)
-
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output, target, topk=(1, 5))
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1[0], input.size(0))
-        top5.update(prec5[0], input.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        if i % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                   epoch, i, len(train_loader), batch_time=batch_time,
-                   data_time=data_time, loss=losses, top1=top1, top5=top5))
-
-
-def validate(val_loader, model, criterion, mask):
+def validate(val_loader, model, criterion, mask, percentage, layer_id):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -268,8 +177,6 @@ def validate(val_loader, model, criterion, mask):
     # switch to evaluate mode
     model.eval()
 
-    if args.prune:
-        mask.apply()
     with torch.no_grad():
         end = time.time()
         for i, (input, target) in enumerate(val_loader):
@@ -300,21 +207,10 @@ def validate(val_loader, model, criterion, mask):
 
         print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
+        log_info = '{},{},{},{}'.format(layer_id, percentage, top1.avg, top5.avg)
+        subprocess.call('echo \''+ log_info + '\' >> sensitivity.log', shell=True)
 
     return top1.avg
-
-
-def save_checkpoint(state, is_best):
-    if args.prune:
-        filename='saved_models/checkpoint.prune.' + str(args.stage) + '.pth.tar'
-    else:
-        filename='saved_models/checkpoint.pth.tar'
-    subprocess.call('mkdir saved_models -p', shell=True)
-    torch.save(state, filename)
-    if is_best and (not args.prune):
-        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
-    return
-
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
