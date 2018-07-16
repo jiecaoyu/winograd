@@ -77,6 +77,8 @@ parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
 parser.add_argument('--generate-mask', action='store_true', default=False,
         help='whether save the spatial mask')
+parser.add_argument('--skip-layers', action='store', default=None,
+        help='the list of layers not pruned')
 best_prec1 = 0
 
 
@@ -176,6 +178,11 @@ def main():
     print(model)
 
     if args.prune:
+        if args.skip_layers:
+            print(args.skip_layers)
+            skip_layers_list = args.skip_layers.split(',')
+            for index in skip_layers_list:
+                utils.para.resnet18_threshold_dict[int(index)] *= 0.0
         mask = utils.mask.Mask(model, args.threshold_multi,
                 [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
                 winograd_structured=args.winograd_structured,
