@@ -24,7 +24,7 @@ from torch.autograd import Variable
 import os
 import sys
 cwd = os.getcwd()
-sys.path.append(cwd + '/../../')
+sys.path.append(cwd + '/../')
 import utils
 import self_models
 
@@ -39,7 +39,10 @@ def save_state(model, acc):
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
     subprocess.call('mkdir saved_models/ -p', shell=True)
-    torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
+    if args.prune:
+        torch.save(state, 'saved_models/'+args.arch+'.prune.'+str(args.stage)+'.pth.tar')
+    else:
+        torch.save(state, 'saved_models/'+args.arch+'.best_origin.pth.tar')
     return
 
 def load_state(model, state_dict):
@@ -60,6 +63,8 @@ def train(epoch):
     loss_avg = 0.0
     for batch_idx, (data, target) in enumerate(trainloader):
         data, target = Variable(data.cuda()), Variable(target.cuda())
+        if args.prune:
+            mask.apply()
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
@@ -78,6 +83,8 @@ def test(evaluate=False):
     model.eval()
     test_loss = 0
     correct = 0
+    if args.prune:
+        mask.apply()
     for data, target in testloader:
         data, target = Variable(data.cuda()), Variable(target.cuda())
         output = model(data)
@@ -86,7 +93,7 @@ def test(evaluate=False):
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     acc = 100. * float(correct) / len(testloader.dataset)
-    if (acc > best_acc):
+    if (acc > best_acc) or (args.prune):
         best_acc = acc
         if not evaluate:
             save_state(model, best_acc)
@@ -98,7 +105,10 @@ def test(evaluate=False):
     print('Best Accuracy: {:.2f}%\n'.format(best_acc))
 
 def adjust_learning_rate(optimizer, epoch):
-    S = [200, 250, 300]
+    if args.prune:
+        S = [50, 100, 150]
+    else:
+        S = [200, 250, 300]
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
@@ -111,8 +121,8 @@ if __name__=='__main__':
             help='input batch size for training (default: 100)')
     parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
             help='input batch size for testing (default: 100)')
-    parser.add_argument('--epochs', type=int, default=120, metavar='N',
-            help='number of epochs to train (default: 120)')
+    parser.add_argument('--epochs', type=int, default=350, metavar='N',
+            help='number of epochs to train (default: 350)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
@@ -133,6 +143,16 @@ if __name__=='__main__':
             help='pretrained model')
     parser.add_argument('--evaluate', action='store_true', default=False,
             help='whether to run evaluation')
+
+    # pruning arguments
+    parser.add_argument('--prune', action='store_true', default=False,
+            help='enable pruning')
+    parser.add_argument('--stage', type=int, default=0,
+            help='pruning stage')
+    parser.add_argument('--winograd-structured', action='store_true', default=False,
+            help='enable winograd-driven structured pruning')
+    parser.add_argument('--percentage', type=float, default=0.0,
+            help='pruning percentage')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -180,6 +200,9 @@ if __name__=='__main__':
         print('ERROR: specified arch is not suppported')
         exit()
     
+    if (not args.pretrained) and args.prune:
+        raise Exception ('Pruning requires pretrained model.')
+
     if not args.pretrained:
         best_acc = 0.0
     else:
@@ -198,12 +221,99 @@ if __name__=='__main__':
 
     criterion = nn.CrossEntropyLoss()
     print(model)
+    
+    if args.prune:
+        assert(args.winograd_structured), 'Please trun on --winograd-structured'
+        mask = utils.mask.Mask(model,
+                prune_list=[1,2,3,4,5,6],
+                winograd_structured=args.winograd_structured,
+                percentage=args.percentage)
+        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
+        mask.prune_list.insert(0, 0)
+        count = 0
+        for m in model.modules():
+            if isinstance(m, nn.Dropout):
+                if count == 0:
+                    m.p *= ((1. - 0.2) ** 0.75)
+                else:
+                    m.p *= ((1. - args.percentage) ** 0.75)
+                count += 1
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d):
+                left = 0.0
+                right = m.weight.data.abs().max()
+                tmp_percentage = -1.0
+                while True:
+                    threshold = (left + right) / 2.0
+                    tmp_weight = m.weight.data.abs()
+                    tmp_mask = tmp_weight.lt(-1.0)
+                    if tmp_weight.shape[2] == 5:
+                        S = torch.from_numpy(utils.para.S_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        S = torch.from_numpy(utils.para.S_4x4_3x3).float()
+                    else:
+                        raise Exception ('The kernel size is not supported.')
+                    if tmp_weight.is_cuda:
+                        S = S.cuda()
+                    for i in range(S.shape[0]):
+                        S_piece = S[i].view(tmp_weight.shape[2],
+                                tmp_weight.shape[2])
+                        mask_piece = S_piece.abs().gt(0.0)
+                        tmp_weight_masked = tmp_weight.mul(
+                                mask_piece.unsqueeze(0).unsqueeze(0).float())
+                        tmp_weight_masked = tmp_weight_masked.view(
+                                tmp_weight_masked.shape[0],
+                                tmp_weight_masked.shape[1],
+                                -1)
+                        tmp_weight_masked,_ = torch.max(
+                                tmp_weight_masked, dim=2)
+                        tmp_weight_masked = tmp_weight_masked.lt(threshold)
+                        mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
+                                .mul(mask_piece.unsqueeze(0).unsqueeze(1))
+                        tmp_mask = tmp_mask | mask_piece
+
+                    # test winograd sparsity
+                    tmp_weight = m.weight.data.clone()
+                    tmp_weight = tmp_weight.mul(1.0 - tmp_mask.float())
+                    if tmp_weight.shape[2] == 5:
+                        G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+                    else:
+                        raise Exception ('The kernel size is not supported.')
+                    tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])
+                    if tmp_weight.is_cuda:
+                        G = G.cuda()
+                    tmp_weight_t = torch.bmm(
+                            G.unsqueeze(0).expand(tmp_weight.size(0), *G.size()), tmp_weight)
+                    GT = G.transpose(0, 1)
+                    tmp_weight_t = torch.bmm(
+                            tmp_weight_t,
+                            GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
+                    pruned = tmp_weight_t.eq(0.0).sum()
+                    total = tmp_weight_t.nelement()
+                    del tmp_weight
+                    tmp_percentage = float(pruned) / total
+                    percentage = 0.2
+                    if abs(percentage - tmp_percentage) < 0.0001:
+                        break
+                    elif tmp_percentage > percentage:
+                        right = threshold
+                    else:
+                        left = threshold
+                    print(tmp_percentage)
+                mask.mask_list[0] = tmp_mask.float()
+                break
+        mask.print_mask_info()
+        mask.print_mask_info_winograd()
+    else:
+        mask = None
 
     if args.evaluate:
         test(evaluate=True)
         exit()
 
-    for epoch in range(350):
+    for epoch in range(args.epochs):
         lr_cur = adjust_learning_rate(optimizer, epoch)
         print('Current learing rate: {}'.format(lr_cur))
         train(epoch)
