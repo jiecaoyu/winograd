@@ -235,15 +235,19 @@ class Mask():
                             GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
                     pruned = tmp_weight_t.eq(0.0).sum()
                     total = tmp_weight_t.nelement()
-                    weights_pruned += int(pruned)
-                    weights_total += total
+                    if float(pruned) / total > 0.05:
+                        weights_pruned += int(pruned)
+                        weights_total += total
                     print('CONV {} : {:8d}/{:8d} -- {:.4f}'\
                             .format(count, int(pruned), total, float(pruned) / total))
                     del tmp_weight
                 else:
                     print('CONV ' + str(count) + ' : not pruned')
                 count += 1
-
-        print('\nOverall {:8d}/{:8d} -- {:.4f}'.format(weights_pruned, weights_total, float(weights_pruned) / weights_total))
+        
+        # avoid divided by zero error
+        if weights_total == 0:
+            weights_total = 1
+        print('\nOverall of Pruned Layers {:8d}/{:8d} -- {:.4f}'.format(weights_pruned, weights_total, float(weights_pruned) / weights_total))
         print('-'*50)
         return
