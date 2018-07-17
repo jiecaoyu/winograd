@@ -228,8 +228,6 @@ if __name__=='__main__':
                 prune_list=[1,2,3,4,5,6],
                 winograd_structured=args.winograd_structured,
                 percentage=args.percentage)
-        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
-        mask.prune_list.insert(0, 0)
         count = 0
         for m in model.modules():
             if isinstance(m, nn.Dropout):
@@ -238,6 +236,8 @@ if __name__=='__main__':
                 else:
                     m.p *= ((1. - args.percentage) ** 0.75)
                 count += 1
+        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
+        mask.prune_list.insert(0, 0)
         for m in model.modules():
             if isinstance(m, nn.Conv2d):
                 left = 0.0
