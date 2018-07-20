@@ -78,6 +78,8 @@ parser.add_argument('--spatial-mask', action='store', default=None,
         help='whether include a spatial mask')
 parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
+parser.add_argument('--skip-layers', action='store', default=None,
+        help='the list of layers not pruned')
 best_prec1 = 0
 
 
@@ -202,10 +204,17 @@ def main():
             prune_list=prune_list)
     
     subprocess.call('rm sensitivity.log', shell=True)
+    if args.skip_layers:
+        print(args.skip_layers)
+        skip_layers_list = [ int(x) for x in args.skip_layers.split(',')]
+    else:
+        skip_layers_list = []
     for index in range(len(prune_list)):
         layer_index = prune_list[index]
         sparsity_base = sparsity_list[index]
         sparsity_step = 0.01
+        if layer_index in skip_layers_list:
+            continue
         for i in range(15):
             load_state_normal(model, checkpoint['state_dict'])
             sparsity_tmp = sparsity_base + sparsity_step * (i + 1)
