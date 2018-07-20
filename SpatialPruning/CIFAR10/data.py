@@ -40,7 +40,7 @@ class dataset():
             if indicator > 0.5:
                 img_np = numpy.flip(img_np, 2).copy()
 
-            padding = 2
+            padding = 4
 
             img_np = numpy.pad(img_np,
                     ((0,0), (padding, padding), (padding, padding)), 'constant', constant_values=0.0)

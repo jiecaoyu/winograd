@@ -128,8 +128,8 @@ if __name__=='__main__':
             help='learning rate (default: 0.03)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
-            metavar='W', help='weight decay (default: 1e-3)')
+    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
+            metavar='W', help='weight decay (default: 5e-4)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -178,6 +178,11 @@ if __name__=='__main__':
     if (not args.pretrained) and args.prune:
         raise Exception ('Pruning requires pretrained model.')
 
+    # initialization
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d):
+            m.weight.data.normal_(0, 0.05)
+
     if not args.pretrained:
         best_acc = 0.0
     else:
@@ -196,14 +201,96 @@ if __name__=='__main__':
 
     criterion = nn.CrossEntropyLoss()
     print(model)
-
-    # initialization
-    for m in model.modules():
-        if isinstance(m, nn.Conv2d):
-            m.weight.data.normal_(0, 0.05)
     
     if args.prune:
-        raise Exception('Need to reconfigure the mask')
+        assert(args.winograd_structured), 'Please trun on --winograd-structured'
+        # adjust dropout
+        count = 0
+        for m in model.modules():
+            if isinstance(m, nn.Dropout):
+                m.p *= ((1. - args.percentage) ** 0.1)
+                count += 1
+                print(m)
+                if count >= 2:
+                    break
+        mask = utils.mask.Mask(model,
+                prune_list=[1,2,3,4,5,6,7],
+                winograd_structured=args.winograd_structured,
+                percentage=args.percentage)
+        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
+        mask.prune_list.insert(0, 0)
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d):
+                left = 0.0
+                right = m.weight.data.abs().max()
+                tmp_percentage = -1.0
+                count_limit = 100
+                while True:
+                    threshold = (left + right) / 2.0
+                    tmp_weight = m.weight.data.abs()
+                    tmp_mask = tmp_weight.lt(-1.0)
+                    if tmp_weight.shape[2] == 5:
+                        S = torch.from_numpy(utils.para.S_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        S = torch.from_numpy(utils.para.S_4x4_3x3).float()
+                    else:
+                        raise Exception ('The kernel size is not supported.')
+                    if tmp_weight.is_cuda:
+                        S = S.cuda()
+                    for i in range(S.shape[0]):
+                        S_piece = S[i].view(tmp_weight.shape[2],
+                                tmp_weight.shape[2])
+                        mask_piece = S_piece.abs().gt(0.0)
+                        tmp_weight_masked = tmp_weight.mul(
+                                mask_piece.unsqueeze(0).unsqueeze(0).float())
+                        tmp_weight_masked = tmp_weight_masked.view(
+                                tmp_weight_masked.shape[0],
+                                tmp_weight_masked.shape[1],
+                                -1)
+                        tmp_weight_masked,_ = torch.max(
+                                tmp_weight_masked, dim=2)
+                        tmp_weight_masked = tmp_weight_masked.lt(threshold)
+                        mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
+                                .mul(mask_piece.unsqueeze(0).unsqueeze(1))
+                        tmp_mask = tmp_mask | mask_piece
+
+                    # test winograd sparsity
+                    tmp_weight = m.weight.data.clone()
+                    tmp_weight = tmp_weight.mul(1.0 - tmp_mask.float())
+                    if tmp_weight.shape[2] == 5:
+                        G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+                    elif tmp_weight.shape[2] == 3:
+                        G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+                    else:
+                        raise Exception ('The kernel size is not supported.')
+                    tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])
+                    if tmp_weight.is_cuda:
+                        G = G.cuda()
+                    tmp_weight_t = torch.bmm(
+                            G.unsqueeze(0).expand(tmp_weight.size(0), *G.size()), tmp_weight)
+                    GT = G.transpose(0, 1)
+                    tmp_weight_t = torch.bmm(
+                            tmp_weight_t,
+                            GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
+                    pruned = tmp_weight_t.eq(0.0).sum()
+                    total = tmp_weight_t.nelement()
+                    del tmp_weight
+                    tmp_percentage = float(pruned) / total
+                    percentage = 0.2
+                    if abs(percentage - tmp_percentage) < 0.0001:
+                        break
+                    elif tmp_percentage > percentage:
+                        right = threshold
+                    else:
+                        left = threshold
+                    print(tmp_percentage)
+                    count_limit -= 1
+                    if count_limit < 0:
+                        break
+                mask.mask_list[0] = tmp_mask.float()
+                break
+        mask.print_mask_info()
+        mask.print_mask_info_winograd()
     else:
         mask = None
 
