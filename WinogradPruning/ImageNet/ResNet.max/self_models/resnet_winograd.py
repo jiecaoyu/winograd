@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+from __future__ import absolute_import, division, print_function, unicode_literals
 import torch.nn as nn
 import math
 import torch.utils.model_zoo as model_zoo

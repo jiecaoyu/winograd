@@ -17,7 +17,7 @@ import newLayers
 from . import para
 
 class GradOptimizer():
-    def __init__(self, model, spatial_mask, prune_list=None):
+    def __init__(self, model, spatial_mask=False, prune_list=None):
         self.grad_target = []
         self.opt_operator = []
         self.kernel_size = []

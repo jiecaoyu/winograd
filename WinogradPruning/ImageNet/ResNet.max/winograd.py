@@ -65,8 +65,8 @@ parser.add_argument('--dist-backend', default='gloo', type=str,
 # pruning arguments
 parser.add_argument('--prune', action='store_true', default=False,
         help='enable pruning')
-parser.add_argument('--threshold', type=float, default=0.0,
-        help='pruning threshold')
+parser.add_argument('--threshold-multi', type=float, default=0.0,
+        help='pruning threshold-multi')
 parser.add_argument('--stage', type=int, default=0,
         help='pruning stage')
 parser.add_argument('--pretrained', action='store', default=None,
@@ -188,6 +188,7 @@ def main():
             prune_list=prune_list)
     if args.prune:
         mask = utils.mask.Mask(model,
+                threshold_multi=args.threshold_multi,
                 prune_list=prune_list,
                 winograd_domain = True, percentage=args.percentage)
     else:
