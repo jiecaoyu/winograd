@@ -7,3 +7,5 @@ CUDA_VISIBLE_DEVICES=5,6 python main.py  --pretrained saved_models/conv_pool_cnn
 CUDA_VISIBLE_DEVICES=5,6 python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.1.pth.tar     --winograd-structured --prune --percentage 0.40 --lr 0.0005 --epochs 100 --stage 2 &> step2
 
 CUDA_VISIBLE_DEVICES=5,6 python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.2.pth.tar     --winograd-structured --prune --percentage 0.50 --lr 0.0005 --epochs 100 --stage 3 &> step3
+
+CUDA_VISIBLE_DEVICES=5,6 python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.3.pth.tar     --winograd-structured --prune --percentage 0.60 --lr 0.0005 --epochs 100 --stage 4 &> step4
