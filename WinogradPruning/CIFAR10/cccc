@@ -1,0 +1,161 @@
+31d30
+< import newLayers
+63,100d61
+< def load_state_normal(model, state_dict):
+<     state_dict_keys = state_dict.keys()
+<     for key in state_dict_keys:
+<         if 'module' in key:
+<             state_dict[key.replace('module.', '')] = state_dict[key]
+<     state_dict_keys = state_dict.keys()
+<     cur_state_dict = model.state_dict()
+<     for key in cur_state_dict:
+<         if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
+<             loaded_weight = state_dict[key.replace('module.', '')]
+<             if cur_state_dict[key].shape != loaded_weight.shape:
+<                 print(loaded_weight.shape)
+<                 kernel_size = state_dict[key].shape[3]
+<                 if kernel_size == 5:
+<                     G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+<                     BT = torch.from_numpy(utils.para.BT_4x4_5x5).float()
+<                 elif kernel_size == 3:
+<                     G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+<                     BT = torch.from_numpy(utils.para.BT_4x4_3x3).float()
+<                 else:
+<                     raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
+<                 weight = state_dict[key]
+<                 weight_t = weight.view(weight.shape[0] * weight.shape[1],
+<                         kernel_size, kernel_size)
+<                 if weight.is_cuda:
+<                     G = G.cuda()
+<                 weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+<                         weight_t)
+<                 GT = G.transpose(0, 1)
+<                 weight_t = torch.bmm(weight_t,
+<                         GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+<                 weight_t = weight_t.view(weight.shape[0], weight.shape[1],
+<                         BT.shape[0], BT.shape[1])
+<                 cur_state_dict[key].copy_(weight_t)
+<             else:
+<                 cur_state_dict[key].copy_(state_dict[key])
+<     return
+< 
+113d73
+<         grad_optimizer.step()
+179,180c139,140
+<     parser.add_argument('--arch', action='store', default='vgg_nagadomi_winograd',
+<             help='the MNIST network structure: vgg_nagadomi_winograd')
+---
+>     parser.add_argument('--arch', action='store', default='vgg_nagadomi',
+>             help='the MNIST network structure: vgg_nagadomi')
+183,184d142
+<     parser.add_argument('--pretrained-normal', action='store', default=None,
+<             help='pretrained normal model')
+241,242c199,200
+<     if args.arch == 'vgg_nagadomi_winograd':
+<         model = self_models.vgg_nagadomi_winograd()
+---
+>     if args.arch == 'vgg_nagadomi':
+>         model = self_models.vgg_nagadomi()
+247c205
+<     if (not args.pretrained) and (not args.pretrained_normal) and args.prune:
+---
+>     if (not args.pretrained) and args.prune:
+253c211
+<             m.weight.data.normal_(0, 0.05)
+---
+>             m.weight.data.normal_(0, 0.03)
+255c213,215
+<     if args.pretrained:
+---
+>     if not args.pretrained:
+>         best_acc = 0.0
+>     else:
+259,264d218
+<     elif args.pretrained_normal:
+<         pretrained_model = torch.load(args.pretrained_normal)
+<         best_acc = pretrained_model['acc']
+<         load_state_normal(model, pretrained_model['state_dict'])
+<     else:
+<         best_acc = 0.0
+278a233
+>         assert(args.winograd_structured), 'Please trun on --winograd-structured'
+291c246
+<                 winograd_domain=True,
+---
+>                 winograd_structured=args.winograd_structured,
+296c251
+<             if isinstance(m, newLayers.Winograd2d.Winograd2d):
+---
+>             if isinstance(m, nn.Conv2d):
+299a255
+>                 count_limit = 100
+304,307c260,263
+<                     if m.kernel_size == 5:
+<                         threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_5x5).float()
+<                     elif m.kernel_size == 3:
+<                         threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_3x3).float()
+---
+>                     if tmp_weight.shape[2] == 5:
+>                         S = torch.from_numpy(utils.para.S_4x4_5x5).float()
+>                     elif tmp_weight.shape[2] == 3:
+>                         S = torch.from_numpy(utils.para.S_4x4_3x3).float()
+309,316c265,305
+<                         raise Exception ('kernel_size currently not supported')
+<                     if m.weight.data.is_cuda:
+<                         threshold_tensor = threshold_tensor.cuda()
+<                     threshold_tensor = threshold_tensor / threshold_tensor.min()
+<                     tmp_mask = m.weight.data.clone().abs()\
+<                             .lt(threshold_tensor.pow(-1.0).mul(threshold)).float()
+<                     pruned = tmp_mask.sum()
+<                     total = tmp_mask.nelement()
+---
+>                         raise Exception ('The kernel size is not supported.')
+>                     if tmp_weight.is_cuda:
+>                         S = S.cuda()
+>                     for i in range(S.shape[0]):
+>                         S_piece = S[i].view(tmp_weight.shape[2],
+>                                 tmp_weight.shape[2])
+>                         mask_piece = S_piece.abs().gt(0.0)
+>                         tmp_weight_masked = tmp_weight.mul(
+>                                 mask_piece.unsqueeze(0).unsqueeze(0).float())
+>                         tmp_weight_masked = tmp_weight_masked.view(
+>                                 tmp_weight_masked.shape[0],
+>                                 tmp_weight_masked.shape[1],
+>                                 -1)
+>                         tmp_weight_masked,_ = torch.max(
+>                                 tmp_weight_masked, dim=2)
+>                         tmp_weight_masked = tmp_weight_masked.lt(threshold)
+>                         mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
+>                                 .mul(mask_piece.unsqueeze(0).unsqueeze(1))
+>                         tmp_mask = tmp_mask | mask_piece
+> 
+>                     # test winograd sparsity
+>                     tmp_weight = m.weight.data.clone()
+>                     tmp_weight = tmp_weight.mul(1.0 - tmp_mask.float())
+>                     if tmp_weight.shape[2] == 5:
+>                         G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+>                     elif tmp_weight.shape[2] == 3:
+>                         G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+>                     else:
+>                         raise Exception ('The kernel size is not supported.')
+>                     tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])
+>                     if tmp_weight.is_cuda:
+>                         G = G.cuda()
+>                     tmp_weight_t = torch.bmm(
+>                             G.unsqueeze(0).expand(tmp_weight.size(0), *G.size()), tmp_weight)
+>                     GT = G.transpose(0, 1)
+>                     tmp_weight_t = torch.bmm(
+>                             tmp_weight_t,
+>                             GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
+>                     pruned = tmp_weight_t.eq(0.0).sum()
+>                     total = tmp_weight_t.nelement()
+>                     del tmp_weight
+325a315,317
+>                     count_limit -= 1
+>                     if count_limit < 0:
+>                         break
+328a321
+>         mask.print_mask_info_winograd()
+335,336d327
+<     
+<     grad_optimizer = utils.grad_compute.GradOptimizer(model)

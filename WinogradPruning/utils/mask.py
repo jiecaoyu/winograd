@@ -142,14 +142,18 @@ class Mask():
                 if count in self.prune_list:
                     pruned = self.mask_list[count].sum()
                     total = self.mask_list[count].nelement()
-                    pruned_acc += pruned
-                    total_acc += total
+                    if float(pruned) / total > 0.05:
+                        pruned_acc += pruned
+                        total_acc += total
                     print('CONV {} : {:8d}/{:8d} -- {:.4f}'\
                             .format(count, int(pruned), total, float(pruned) / total))
                 else:
                     print('CONV ' + str(count) + ' : not pruned')
                 count += 1
         
-        print('\nOverall sparsity:{:.4f}'.format(float(pruned_acc)/float(total_acc)))
+        # avoid divided by zero error
+        if total_acc == 0:
+            total_acc = 1
+        print('\nOverall of Pruned Layers {:8d}/{:8d} -- {:.4f}'.format(int(pruned_acc), int(total_acc), float(pruned_acc) / total_acc))
         print('-'*50)
         return
