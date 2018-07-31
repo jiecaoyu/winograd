@@ -107,9 +107,9 @@ def test(evaluate=False):
 
 def adjust_learning_rate(optimizer, epoch):
     if args.prune:
-        S = [50, 100, 150]
+        S = [100, 200, 300]
     else:
-        S = [200, 250, 300]
+        S = [200, 350, 500, 600]
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
@@ -118,10 +118,10 @@ def adjust_learning_rate(optimizer, epoch):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Example')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
-            help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=350, metavar='N',
-            help='number of epochs to train (default: 350)')
+    parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+            help='input batch size for training (default: 128)')
+    parser.add_argument('--epochs', type=int, default=700, metavar='N',
+            help='number of epochs to train (default: 700)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.03, metavar='LR',
@@ -152,6 +152,8 @@ if __name__=='__main__':
             help='enable winograd-driven structured pruning')
     parser.add_argument('--percentage', type=float, default=0.0,
             help='pruning percentage')
+    parser.add_argument('--wd-power', type=float, default=0.1,
+            help='weight_decay power')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -164,7 +166,7 @@ if __name__=='__main__':
     trainset = data.dataset(root='./data', train=True)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
             shuffle=True, num_workers=2)
-    
+
     testset = data.dataset(root='./data', train=False)
     testloader = torch.utils.data.DataLoader(testset, batch_size=100,
             shuffle=False, num_workers=2)
@@ -192,7 +194,7 @@ if __name__=='__main__':
 
     if args.cuda:
         model.cuda()
-        model = torch.nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
+        model.feature = torch.nn.DataParallel(model.feature, device_ids=range(torch.cuda.device_count()))
     
     optimizer = torch.optim.SGD(model.parameters(),
             lr=args.lr,
@@ -208,11 +210,12 @@ if __name__=='__main__':
         count = 0
         for m in model.modules():
             if isinstance(m, nn.Dropout):
-                m.p *= ((1. - args.percentage) ** 0.1)
+                m.p *= ((1. - args.percentage) ** args.wd_power)
                 count += 1
                 print(m)
                 if count >= 2:
                     break
+        print(model)
         mask = utils.mask.Mask(model,
                 prune_list=[1,2,3,4,5,6,7],
                 winograd_structured=args.winograd_structured,
