@@ -29,7 +29,7 @@ class Mask():
             else:
                 self.mask_list =\
                         self.mask_winograd_structured_percentage(model, percentage, prune_list)
-            # save the mask_list
+            # save the mask_list if required
             if generate_mask:
                 mask_name = 'spatial_mask.pth.tar'
                 # pickle.dump(self.mask_list, open(mask_name, 'w'))
@@ -167,6 +167,7 @@ class Mask():
         for m in self.model.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, newLayers.Winograd2d.Winograd2d):
                 if count in self.prune_list:
+                    # here using element-wise mul to accelerate the computation
                     m.weight.data.mul_(1.0 - self.mask_list[count])
                 count += 1
         return
@@ -174,6 +175,7 @@ class Mask():
     def mask_grad(self):
         '''
         Apply the mask onto grad of targeting layers
+        *** Not used in current implementation ***
         '''
         count = 0
         for m in self.model.modules():

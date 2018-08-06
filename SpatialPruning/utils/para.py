@@ -186,6 +186,9 @@ mask_multi_4x4_5x5 = numpy.array([
     [  57.125     ,  95.75261093,  95.75261093,  252.44816919,  252.44816919,  504.89633837,  504.89633837,  57.125     ]
     ])
 
+
+# thresholds are generate by sensitivity analysis,
+# please change them when want to use for different models
 resnet18_threshold_dict = {
          1:0.025175609,
          2:0.052369907,

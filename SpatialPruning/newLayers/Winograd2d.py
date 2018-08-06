@@ -10,7 +10,7 @@ cwd = os.getcwd()
 sys.path.append(cwd + '/../')
 import utils
 
-
+# map spatial kernel_size to Winograd kernel_size
 KernelSize2InputTileSize = {
         3 : 6,
         5 : 8,
@@ -117,7 +117,7 @@ class Winograd2d(nn.Module):
                         x_size[2], x_size[3], x_size[4], x_size[5]])
 
         # calculate the output
-        # this computation strategy destory the memory usage and need to optimize
+        # already optimized by using matrix multiplication instead of element-wise mul + add
         weight_t = weight_t.permute(0, 3, 4, 1, 2)
         weight_t = weight_t.contiguous().view(
                 self.groups * self.input_tile_size * self.input_tile_size,

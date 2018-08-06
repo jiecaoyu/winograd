@@ -2,6 +2,10 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import numpy
 
+#
+# This file contains all parameters used in current implementation.
+#
+
 # kernel_size = 5
 G_4x4_5x5 = numpy.array([
     [    1.,      0.,     0.,      0.,      0.],
@@ -186,6 +190,8 @@ mask_multi_4x4_5x5 = numpy.array([
     [  57.125     ,  95.75261093,  95.75261093,  252.44816919,  252.44816919,  504.89633837,  504.89633837,  57.125     ]
     ])
 
+# thresholds are generate by sensitivity analysis,
+# please change them when want to use for different models
 resnet18_threshold_dict_winograd = {
         1 :0.003634408,
         2 :0.006968038,

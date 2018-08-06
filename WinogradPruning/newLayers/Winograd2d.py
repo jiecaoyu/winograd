@@ -10,7 +10,7 @@ cwd = os.getcwd()
 sys.path.append(cwd + '/../')
 import utils
 
-
+# map spatial kernel_size to Winograd kernel_size
 KernelSize2InputTileSize = {
         3 : 6,
         5 : 8,

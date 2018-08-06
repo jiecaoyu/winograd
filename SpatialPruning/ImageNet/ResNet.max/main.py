@@ -178,11 +178,14 @@ def main():
     print(model)
 
     if args.prune:
+        # skip layers when applying pruning to part of the layers
+        # only useful when using threshold to prune layers
         if args.skip_layers:
             print(args.skip_layers)
             skip_layers_list = args.skip_layers.split(',')
             for index in skip_layers_list:
                 utils.para.resnet18_threshold_dict[int(index)] *= 0.0
+        # generate the mask for each layer
         mask = utils.mask.Mask(model, args.threshold_multi,
                 [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
                 winograd_structured=args.winograd_structured,

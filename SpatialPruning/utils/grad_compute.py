@@ -1,4 +1,10 @@
 #!/usr/bin/env python2
+
+#
+# Please ignore the code here and refer to
+#   WinogradPruning/utils/grad_compute.py instead.
+#
+
 from __future__ import absolute_import, division, print_function, unicode_literals
 import argparse
 import torch

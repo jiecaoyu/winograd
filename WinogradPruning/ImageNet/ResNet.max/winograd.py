@@ -187,6 +187,7 @@ def main():
     grad_optimizer = utils.grad_compute.GradOptimizer(model, args.spatial_mask,
             prune_list=prune_list)
     if args.prune:
+        # generate the mask
         mask = utils.mask.Mask(model,
                 threshold_multi=args.threshold_multi,
                 prune_list=prune_list,
