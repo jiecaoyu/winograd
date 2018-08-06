@@ -15,8 +15,8 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
-# import torchvision.datasets as datasets
-import data
+import torchvision.datasets as datasets
+# import data
 import torchvision
 # import torchvision.models as models
 from torch.autograd import Variable
@@ -124,12 +124,12 @@ if __name__=='__main__':
             help='number of epochs to train (default: 700)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
-    parser.add_argument('--lr', type=float, default=0.03, metavar='LR',
-            help='learning rate (default: 0.03)')
+    parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
+            help='learning rate (default: 0.05)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
-            metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', '--wd', default=3e-4, type=float,
+            metavar='W', help='weight decay (default: 3e-4)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -154,6 +154,8 @@ if __name__=='__main__':
             help='pruning percentage')
     parser.add_argument('--wd-power', type=float, default=0.1,
             help='weight_decay power')
+    parser.add_argument('--wd-count', type=int, default=3,
+            help='weight_decay count')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -163,13 +165,38 @@ if __name__=='__main__':
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
-    trainset = data.dataset(root='./data', train=True)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-            shuffle=True, num_workers=2)
+    normalize = transforms.Normalize(mean=[0.491, 0.482, 0.447], std=[0.247, 0.243, 0.262])
+    train_dataset = torchvision.datasets.CIFAR10(
+            root='./data',
+            train=True,
+            download=True,
+            transform=transforms.Compose([
+                transforms.RandomCrop(32, padding=5),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                normalize,
+                ]))
 
-    testset = data.dataset(root='./data', train=False)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=100,
-            shuffle=False, num_workers=2)
+    trainloader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=16)
+
+    test_dataset = torchvision.datasets.CIFAR10(
+            root='./data',
+            train=False,
+            download=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+                ]))
+
+    testloader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=100,
+            shuffle=False,
+            num_workers=2)
 
     if args.arch == 'vgg_nagadomi':
         model = self_models.vgg_nagadomi()
@@ -213,7 +240,7 @@ if __name__=='__main__':
                 m.p *= ((1. - args.percentage) ** args.wd_power)
                 count += 1
                 print(m)
-                if count >= 2:
+                if count >= args.wd_count:
                     break
         print(model)
         mask = utils.mask.Mask(model,
