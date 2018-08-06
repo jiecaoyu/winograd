@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 from __future__ import absolute_import, division, print_function, unicode_literals
 import argparse
-import os
 import shutil
 import time
 import subprocess
@@ -170,10 +169,6 @@ def main():
     else:
         train_sampler = None
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler)
-
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
             transforms.Resize(256),
@@ -200,9 +195,6 @@ def main():
             count += 1
     print(sparsity_list)
 
-    grad_optimizer = utils.grad_compute.GradOptimizer(model, args.spatial_mask,
-            prune_list=prune_list)
-    
     subprocess.call('rm sensitivity.log', shell=True)
     if args.skip_layers:
         print(args.skip_layers)

@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+from __future__ import absolute_import, division, print_function, unicode_literals
 import torch
 import numpy
 
@@ -21,5 +23,5 @@ kernel_t = torch.bmm(G.unsqueeze(0).expand(kernel.size(0), *G.size()), kernel)
 GT = G.transpose(0, 1)
 kernel_t = torch.bmm(kernel_t, GT.unsqueeze(0).expand(kernel_t.size(0), *GT.size()))
 
-print kernel_t.std(0)
-print kernel_t.mean(0)
+print(kernel_t.std(0))
+print(kernel_t.mean(0))

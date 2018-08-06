@@ -20,7 +20,6 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd + '/../')
 import newLayers
-from . import para
 
 class GradOptimizer():
     def __init__(self, model, spatial_mask, prune_list=None):

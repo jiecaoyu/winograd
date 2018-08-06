@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 from __future__ import absolute_import, division, print_function, unicode_literals
 import argparse
-import os
 import shutil
 import time
 import subprocess
@@ -48,7 +47,6 @@ def save_state(model, acc):
     return
 
 def load_state(model, state_dict):
-    param_dict = dict(model.named_parameters())
     state_dict_keys = state_dict.keys()
     cur_state_dict = model.state_dict()
     for key in cur_state_dict:
@@ -153,7 +151,6 @@ def adjust_learning_rate(optimizer, epoch):
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
-            lr_cur = param_group['lr']
     return optimizer.param_groups[0]['lr']
 
 if __name__=='__main__':
