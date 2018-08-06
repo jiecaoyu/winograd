@@ -19,7 +19,6 @@ import torchvision.datasets as datasets
 # import torchvision.models as models
 
 # import utils
-import os
 import sys
 cwd = os.getcwd()
 sys.path.append(cwd + '/../../')
@@ -123,11 +122,6 @@ def main():
             transforms.ToTensor(),
             normalize,
         ]))
-
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
