@@ -145,9 +145,9 @@ def test(evaluate=False):
 
 def adjust_learning_rate(optimizer, epoch):
     if args.prune:
-        S = [100, 150]
+        S = [200, 350]
     else:
-        S = [150, 225, 300]
+        S = [200, 350, 500, 600]
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
@@ -157,16 +157,16 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Example')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
             help='input batch size for training (default: 128)')
-    parser.add_argument('--epochs', type=int, default=350, metavar='N',
-            help='number of epochs to train (default: 350)')
+    parser.add_argument('--epochs', type=int, default=700, metavar='N',
+            help='number of epochs to train (default: 700)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
             help='learning rate (default: 0.05)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
-            metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', '--wd', default=3e-4, type=float,
+            metavar='W', help='weight decay (default: 3e-4)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -193,6 +193,8 @@ if __name__=='__main__':
             help='pruning percentage')
     parser.add_argument('--wd-power', type=float, default=0.1,
             help='weight_decay power')
+    parser.add_argument('--wd-count', type=int, default=3,
+            help='weight_decay count')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -231,7 +233,7 @@ if __name__=='__main__':
 
     testloader = torch.utils.data.DataLoader(
             test_dataset,
-            batch_size=args.batch_size,
+            batch_size=100,
             shuffle=False,
             num_workers=2)
 
@@ -263,11 +265,20 @@ if __name__=='__main__':
     if args.cuda:
         model.cuda()
         model.feature = torch.nn.DataParallel(model.feature, device_ids=range(torch.cuda.device_count()))
-    
-    optimizer = torch.optim.SGD(model.parameters(),
-            lr=args.lr,
-            momentum=args.momentum,
-            weight_decay=args.weight_decay)
+
+    param_dict = dict(model.named_parameters())
+    params = []
+    for key, value in param_dict.items():
+        if 'feature' in key:
+            print(key)
+            params += [{'params':[value], 'lr': args.lr, 'momentum': args.momentum,
+                'weight_decay': args.weight_decay}]
+        else:
+            params += [{'params':[value], 'lr': 5e-5, 'momentum': args.momentum,
+                'weight_decay': args.weight_decay}]
+
+    optimizer = torch.optim.SGD(params, lr=0.0, weight_decay=args.weight_decay,
+            momentum=args.momentum)
 
     criterion = nn.CrossEntropyLoss()
     print(model)
@@ -280,7 +291,7 @@ if __name__=='__main__':
                 m.p *= ((1. - args.percentage) ** args.wd_power)
                 count += 1
                 print(m)
-                if count >= 2:
+                if count >= args.wd_count:
                     break
         print(model)
         mask = utils.mask.Mask(model,
