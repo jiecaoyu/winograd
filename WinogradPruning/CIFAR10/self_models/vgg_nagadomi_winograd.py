@@ -21,34 +21,38 @@ class vgg_nagadomi_winograd(nn.Module):
         super(vgg_nagadomi_winograd, self).__init__()
         self.feature = nn.Sequential(
                 newLayers.Winograd2d.Winograd2d(3, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64, momentum=0.01),
                 nn.ReLU(inplace=True),
                 newLayers.Winograd2d.Winograd2d(64, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64, momentum=0.01),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
-                nn.Dropout(0.25),
 
                 newLayers.Winograd2d.Winograd2d(64, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128, momentum=0.01),
                 nn.ReLU(inplace=True),
                 newLayers.Winograd2d.Winograd2d(128, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128, momentum=0.01),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
-                nn.Dropout(0.25),
 
                 newLayers.Winograd2d.Winograd2d(128, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256, momentum=0.01),
                 nn.ReLU(inplace=True),
                 newLayers.Winograd2d.Winograd2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256, momentum=0.01),
                 nn.ReLU(inplace=True),
                 newLayers.Winograd2d.Winograd2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256, momentum=0.01),
                 nn.ReLU(inplace=True),
                 newLayers.Winograd2d.Winograd2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256, momentum=0.01),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
                 )
-        self.dropout2   = nn.Dropout(0.25)
-
         self.fc0        = nn.Linear(256 * 4 * 4, 1024)
         self.relu_fc0   = nn.ReLU(inplace=True)
 
@@ -63,7 +67,6 @@ class vgg_nagadomi_winograd(nn.Module):
 
     def forward(self, x):
         out = self.feature(x)
-        out = self.dropout2(out)
 
         out = out.view(out.size(0), 256 * 4 * 4)
 

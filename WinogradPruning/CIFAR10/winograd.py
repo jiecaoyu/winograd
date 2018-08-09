@@ -157,8 +157,8 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Example')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
             help='input batch size for training (default: 128)')
-    parser.add_argument('--epochs', type=int, default=700, metavar='N',
-            help='number of epochs to train (default: 700)')
+    parser.add_argument('--epochs', type=int, default=350, metavar='N',
+            help='number of epochs to train (default: 350)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
@@ -274,7 +274,7 @@ if __name__=='__main__':
             params += [{'params':[value], 'lr': args.lr, 'momentum': args.momentum,
                 'weight_decay': args.weight_decay}]
         else:
-            params += [{'params':[value], 'lr': 5e-5, 'momentum': args.momentum,
+            params += [{'params':[value], 'lr': args.lr, 'momentum': args.momentum,
                 'weight_decay': args.weight_decay}]
 
     optimizer = torch.optim.SGD(params, lr=0.0, weight_decay=args.weight_decay,
@@ -285,15 +285,15 @@ if __name__=='__main__':
     
     if args.prune:
         # adjust dropout
-        count = 0
-        for m in model.modules():
-            if isinstance(m, nn.Dropout):
-                m.p *= ((1. - args.percentage) ** args.wd_power)
-                count += 1
-                print(m)
-                if count >= args.wd_count:
-                    break
-        print(model)
+        # count = 0
+        # for m in model.modules():
+        #     if isinstance(m, nn.Dropout):
+        #         m.p *= ((1. - args.percentage) ** args.wd_power)
+        #         count += 1
+        #         print(m)
+        #         if count >= args.wd_count:
+        #             break
+        # print(model)
         mask = utils.mask.Mask(model,
                 prune_list=[1,2,3,4,5,6,7],
                 winograd_domain=True,
@@ -305,6 +305,7 @@ if __name__=='__main__':
                 left = 0.0
                 right = m.weight.data.abs().max()
                 tmp_percentage = -1.0
+                count_limit = 100
                 while True:
                     threshold = (left + right) / 2.0
                     tmp_weight = m.weight.data.abs()
@@ -331,6 +332,9 @@ if __name__=='__main__':
                     else:
                         left = threshold
                     print(tmp_percentage)
+                    count_limit -= 1
+                    if count_limit < 0:
+                        break
                 mask.mask_list[0] = tmp_mask.float()
                 break
         mask.print_mask_info()

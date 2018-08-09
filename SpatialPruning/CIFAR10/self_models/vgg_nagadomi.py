@@ -16,33 +16,38 @@ class vgg_nagadomi(nn.Module):
         super(vgg_nagadomi, self).__init__()
         self.feature = nn.Sequential(
                 nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(64),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
-                nn.Dropout(0.25),
 
                 nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(128),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
-                nn.Dropout(0.25),
 
                 nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+                nn.BatchNorm2d(256),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
                 )
-        self.dropout2   = nn.Dropout(0.25)
         self.fc0        = nn.Linear(256 * 4 * 4, 1024)
         self.relu_fc0   = nn.ReLU(inplace=True)
 
@@ -57,7 +62,6 @@ class vgg_nagadomi(nn.Module):
 
     def forward(self, x):
         out = self.feature(x)
-        out = self.dropout2(out)
 
         out = out.view(out.size(0), 256 * 4 * 4)
 

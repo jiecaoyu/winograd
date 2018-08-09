@@ -121,8 +121,8 @@ if __name__=='__main__':
             help='number of epochs to train (default: 700)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
-    parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
-            help='learning rate (default: 0.05)')
+    parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
+            help='learning rate (default: 0.1)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', '--wd', default=3e-4, type=float,
@@ -231,15 +231,15 @@ if __name__=='__main__':
     if args.prune:
         assert(args.winograd_structured), 'Please trun on --winograd-structured'
         # adjust dropout
-        count = 0
-        for m in model.modules():
-            if isinstance(m, nn.Dropout):
-                m.p *= ((1. - args.percentage) ** args.wd_power)
-                count += 1
-                print(m)
-                if count >= args.wd_count:
-                    break
-        print(model)
+        # count = 0
+        # for m in model.modules():
+        #     if isinstance(m, nn.Dropout):
+        #         m.p *= ((1. - args.percentage) ** args.wd_power)
+        #         count += 1
+        #         print(m)
+        #         if count >= args.wd_count:
+        #             break
+        # print(model)
         mask = utils.mask.Mask(model,
                 prune_list=[1,2,3,4,5,6,7],
                 winograd_structured=args.winograd_structured,
