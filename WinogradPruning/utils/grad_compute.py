@@ -8,7 +8,6 @@ import torch.optim as optim
 import numpy
 import pickle
 from torch.autograd import Variable
-from . import para
 import os
 import sys
 cwd = os.getcwd()
@@ -39,13 +38,10 @@ class GradOptimizer():
         count = 0
         for index in range(len(self.grad_target)):
             if self.kernel_size[index] == 5:
-                G = torch.from_numpy(para.G_4x4_5x5).float().cuda()
                 mask_multi = torch.from_numpy(para.mask_multi_4x4_5x5).float().cuda()
             elif self.kernel_size[index] == 3:
-                G = torch.from_numpy(para.G_4x4_3x3).float().cuda()
                 mask_multi = torch.from_numpy(para.mask_multi_4x4_3x3).float().cuda()
             mask_multi.div_(mask_multi.min())
-            input_tile_size = self.input_tile_size[index]
             grad_target = self.grad_target[index].grad.data
             grad_target.div_(mask_multi.pow(1.5).unsqueeze(0).unsqueeze(1))
             self.grad_target[index].grad.data = grad_target
