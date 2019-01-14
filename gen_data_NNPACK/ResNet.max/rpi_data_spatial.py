@@ -22,7 +22,8 @@ import torchvision.datasets as datasets
 import os
 import sys
 cwd = os.getcwd()
-sys.path.append(cwd + '/../../')
+sys.path.append(cwd + '/../../SpatialPruning/')
+sys.path.append(cwd + '/../../SpatialPruning/ImageNet/ResNet.max/')
 import utils
 import self_models
 
@@ -183,6 +184,7 @@ def main():
         validate(val_loader, model, criterion, mask)
         return
     
+    subprocess.call("mkdir -p test_para/", shell=True)
     generate_data(val_loader, model, criterion, mask)
 
     generate_model_para(val_loader, model, criterion, mask)
@@ -194,9 +196,9 @@ def generate_data(val_loader, model, criterion, mask):
         for i, (input, target) in enumerate(val_loader):
             import subprocess
             import numpy
-            subprocess.call("rm input_img", shell=True)
+            subprocess.call("rm test_para/input_img", shell=True)
             
-            fp = open("input_img", "wb")
+            fp = open("test_para/input_img", "wb")
             
             single_input = input[0]
             single_input_size = numpy.array(single_input.shape).astype(numpy.int32)
@@ -212,7 +214,7 @@ def generate_data(val_loader, model, criterion, mask):
     return
 
 def save_para(name, data_list):
-    fp_path = "model_para/" + name
+    fp_path = "test_para/model_para/" + name
     subprocess.call("rm " + fp_path, shell=True)
     fp = open(fp_path, "wb")
     for data in data_list:
@@ -271,7 +273,7 @@ def generate_layer_para(layer, start_index):
     return
 
 def generate_model_para(val_loader, model, criterion, mask):
-    subprocess.call("mkdir model_para/ -p", shell=True)
+    subprocess.call("mkdir test_para/model_para/ -p", shell=True)
     # conv1
     conv1 = model.module.conv1
     bn1 = model.module.bn1
