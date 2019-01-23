@@ -16,34 +16,28 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-# import torchvision.models as models
 
-# import utils
 import os
 import sys
 cwd = os.getcwd()
-sys.path.append(cwd + '/../../SpatialPruning/')
-sys.path.append(cwd + '/../../SpatialPruning/ImageNet/ResNet.max/')
+sys.path.append(cwd + '/../../WinogradPruning/')
+sys.path.append(cwd + '/../../WinogradPruning/ImageNet/ResNet.max/')
 import utils
 import self_models
-
-# model_names = sorted(name for name in models.__dict__
-#     if name.islower() and not name.startswith("__")
-#     and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--data', metavar='DIR', default='/home/jiecaoyu/work/data/imagenet',
                     help='path to dataset')
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
-                    help='model architecture: (default: resnet18)')
-parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
-                    help='number of data loading workers (default: 32)')
+parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18_winograd',
+                    help='model architecture: (default: resnet18_winograd)')
+parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+                    help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=1, type=int,
-                    metavar='N', help='mini-batch size (default: 1)')
+parser.add_argument('-b', '--batch-size', default=256, type=int,
+                    metavar='N', help='mini-batch size (default: 256)')
 parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -70,18 +64,15 @@ parser.add_argument('--threshold-multi', type=float, default=0.0,
         help='pruning threshold-multi')
 parser.add_argument('--stage', type=int, default=0,
         help='pruning stage')
-parser.add_argument('--winograd-structured', action='store_true', default=False,
-        help='enable winograd-driven structured pruning')
 parser.add_argument('--pretrained', action='store', default=None,
         help='pretrained model')
+parser.add_argument('--pretrained-normal', action='store', default=None,
+        help='pretrained_normal model')
+parser.add_argument('--spatial-mask', action='store', default=None,
+        help='whether include a spatial mask')
 parser.add_argument('--percentage', type=float, default=0.0,
         help='pruning percentage')
-parser.add_argument('--generate-mask', action='store_true', default=False,
-        help='whether save the spatial mask')
-parser.add_argument('--skip-layers', action='store', default=None,
-        help='the list of layers not pruned')
 best_prec1 = 0
-
 
 def main():
     global args, best_prec1
@@ -102,6 +93,14 @@ def main():
             load_state(model, checkpoint['state_dict'])
         else:
             print("=> no pretrained model found at '{}'".format(args.resume))
+    elif args.pretrained_normal:
+        if os.path.isfile(args.pretrained_normal):
+            print("=> loading pretrained_normal model '{}'".format(args.pretrained_normal))
+            model = self_models.__dict__[args.arch]()
+            checkpoint = torch.load(args.pretrained_normal)
+            load_state_normal(model, checkpoint['state_dict'])
+        else:
+            print("=> no pretrained_normal model found at '{}'".format(args.resume))
     else:
         print("=> creating model '{}'".format(args.arch))
         model = self_models.__dict__[args.arch]()
@@ -137,7 +136,7 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-    if (not args.resume) and (not args.pretrained) and args.prune:
+    if (not args.resume) and (not args.pretrained) and (not args.pretrained_normal) and args.prune:
         raise Exception ('Pruning requires pretrained model.')
 
     cudnn.benchmark = True
@@ -146,11 +145,6 @@ def main():
     valdir = os.path.join(args.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -164,62 +158,56 @@ def main():
     
     print(model)
 
+    prune_list = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19]
+    grad_optimizer = utils.grad_compute.GradOptimizer(model, args.spatial_mask,
+            prune_list=prune_list)
     if args.prune:
-        # skip layers when applying pruning to part of the layers
-        # only useful when using threshold to prune layers
-        if args.skip_layers:
-            print(args.skip_layers)
-            skip_layers_list = args.skip_layers.split(',')
-            for index in skip_layers_list:
-                utils.para.resnet18_threshold_dict[int(index)] *= 0.0
-        # generate the mask for each layer
-        mask = utils.mask.Mask(model, args.threshold_multi,
-                [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19],
-                winograd_structured=args.winograd_structured,
-                percentage=args.percentage, generate_mask=args.generate_mask)
+        # generate the mask
+        mask = utils.mask.Mask(model,
+                threshold_multi=args.threshold_multi,
+                prune_list=prune_list,
+                winograd_domain = True, percentage=args.percentage)
     else:
-        mask = None
+        raise Exception("The model has to be pruned.")
 
     if args.evaluate:
         validate(val_loader, model, criterion, mask)
         return
     
-    subprocess.call("mkdir -p test_para/dense_spatial/", shell=True)
-    generate_data(val_loader, model, criterion, mask)
+    subprocess.call("mkdir -p test_para/winograd_sparse", shell=True)
 
-    generate_model_para(val_loader, model, criterion, mask)
+    generate_data(model, criterion, mask)
 
+    generate_model_para(model, criterion, mask)
 
-def generate_data(val_loader, model, criterion, mask):
+def generate_data(model, criterion, mask):
+    # switch to evaluate mode
     model.eval()
-    with torch.no_grad():
-        for i, (input, target) in enumerate(val_loader):
-            subprocess.call("rm test_para/dense_spatial/input_img", shell=True)
-            
-            fp = open("test_para/dense_spatial/input_img", "wb")
-            
-            single_input = input[0]
-            single_input_size = numpy.array(single_input.shape).astype(numpy.int32)
-            single_input_size.tofile(fp)
 
-            data = single_input.numpy().astype(numpy.float32)
-            data.tofile(fp)
+    if args.prune:
+        mask.apply()
 
-            fp.close()
-            
-            break
+    # we use the data generated by rpi_data_spatial.py
+    single_input_size = numpy.fromfile("test_para/dense_spatial/input_img",
+            dtype=numpy.int32, count=3)
+    single_input = numpy.fromfile("test_para/dense_spatial/input_img", dtype=numpy.float32)
+    single_input = single_input[3:].reshape(single_input_size)
+    single_input = torch.from_numpy(single_input)
     output = model(single_input.unsqueeze(0))
+
+    # copy the input_img
+    subprocess.call(
+            "cp test_para/dense_spatial/input_img test_para/winograd_sparse/input_img",
+            shell=True)
+
     return
 
 def save_para(name, data_list):
-    fp_path = "test_para/dense_spatial/model_para/" + name
+    fp_path = "test_para/winograd_sparse/model_para/" + name
     subprocess.call("rm " + fp_path, shell=True)
     fp = open(fp_path, "wb")
     for data in data_list:
         data.cpu().numpy().astype(numpy.float32).tofile(fp)
-
-    fp.close()
-    return
 
 def generate_layer_para(layer, start_index):
     block_count = 0
@@ -270,8 +258,8 @@ def generate_layer_para(layer, start_index):
         block_count += 1
     return
 
-def generate_model_para(val_loader, model, criterion, mask):
-    subprocess.call("mkdir test_para/dense_spatial/model_para/ -p", shell=True)
+def generate_model_para(model, criterion, mask):
+    subprocess.call("mkdir test_para/winograd_sparse/model_para/ -p", shell=True)
     # conv1
     conv1 = model.module.conv1
     bn1 = model.module.bn1
@@ -296,6 +284,7 @@ def generate_model_para(val_loader, model, criterion, mask):
     fc_bias = model.module.fc.bias.data
     save_para("fc", [fc_weight, fc_bias])
     return
+
 
 def validate(val_loader, model, criterion, mask):
     batch_time = AverageMeter()
@@ -341,19 +330,6 @@ def validate(val_loader, model, criterion, mask):
 
     return top1.avg
 
-
-def save_checkpoint(state, is_best):
-    if args.prune:
-        filename='saved_models/checkpoint.prune.' + str(args.stage) + '.pth.tar'
-    else:
-        filename='saved_models/checkpoint.pth.tar'
-    subprocess.call('mkdir saved_models -p', shell=True)
-    torch.save(state, filename)
-    if is_best and (not args.prune):
-        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
-    return
-
-
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -370,14 +346,6 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
-
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 30))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -405,6 +373,44 @@ def load_state(model, state_dict):
     for key in cur_state_dict:
         if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
             cur_state_dict[key].copy_(state_dict[key.replace('module.', '')])
+    return
+
+def load_state_normal(model, state_dict):
+    state_dict_keys = state_dict.keys()
+    for key in state_dict_keys:
+        if 'module' in key:
+            state_dict[key.replace('module.', '')] = state_dict[key]
+    state_dict_keys = state_dict.keys()
+    cur_state_dict = model.state_dict()
+    for key in cur_state_dict:
+        if (key in state_dict_keys) or (key.replace('module.', '') in state_dict_keys):
+            loaded_weight = state_dict[key.replace('module.', '')]
+            if cur_state_dict[key].shape != loaded_weight.shape:
+                print(loaded_weight.shape)
+                kernel_size = state_dict[key].shape[3]
+                if kernel_size == 5:
+                    G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+                    BT = torch.from_numpy(utils.para.BT_4x4_5x5).float()
+                elif kernel_size == 3:
+                    G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+                    BT = torch.from_numpy(utils.para.BT_4x4_3x3).float()
+                else:
+                    raise Exception ('Kernel size of ' + str(kernel_size) + " is not supported.")
+                weight = state_dict[key]
+                weight_t = weight.view(weight.shape[0] * weight.shape[1],
+                        kernel_size, kernel_size)
+                if weight.is_cuda:
+                    G = G.cuda()
+                weight_t = torch.bmm(G.unsqueeze(0).expand(weight_t.size(0), *G.size()),
+                        weight_t)
+                GT = G.transpose(0, 1)
+                weight_t = torch.bmm(weight_t,
+                        GT.unsqueeze(0).expand(weight_t.size(0), *GT.size()))
+                weight_t = weight_t.view(weight.shape[0], weight.shape[1],
+                        BT.shape[0], BT.shape[1])
+                cur_state_dict[key].copy_(weight_t)
+            else:
+                cur_state_dict[key].copy_(state_dict[key])
     return
 
 if __name__ == '__main__':
