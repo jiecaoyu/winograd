@@ -17,4 +17,3 @@ To run the Winograd direct pruning on ResNet-18 model:
 $ cd ../../../WinogradPruning/ImageNet/ResNet.max/
 $ bash winograd_prune.uniform.sh
 ```
-# winograd_scalpel
