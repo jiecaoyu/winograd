@@ -24,24 +24,27 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batchSz', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--nEpochs', type=int, default=300)
     parser.add_argument('--no-cuda', action='store_true')
     parser.add_argument('--save')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--opt', type=str, default='sgd',
                         choices=('sgd', 'adam', 'rmsprop'))
+    parser.add_argument('--resume', type=str, default=None)
+    parser.add_argument('--evaluate', default=False, action='store_true')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.save = args.save or 'saved_models/'
 
+    global best_acc
+    best_acc = 0.0
+
     torch.manual_seed(args.seed)
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
-    if os.path.exists(args.save):
-        shutil.rmtree(args.save)
     # os.makedirs(args.save, exist_ok=True)
     subprocess.call('mkdir -p ' + args.save, shell=True)
 
@@ -50,7 +53,7 @@ def main():
     normTransform = transforms.Normalize(normMean, normStd)
 
     trainTransform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
+        transforms.RandomCrop(32, padding=5),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         normTransform
@@ -64,19 +67,21 @@ def main():
     trainLoader = DataLoader(
         dset.CIFAR10(root='cifar', train=True, download=True,
                      transform=trainTransform),
-        batch_size=args.batchSz, shuffle=True, **kwargs)
+        batch_size=args.batch_size, shuffle=True, **kwargs)
     testLoader = DataLoader(
         dset.CIFAR10(root='cifar', train=False, download=True,
                      transform=testTransform),
-        batch_size=args.batchSz, shuffle=False, **kwargs)
+        batch_size=args.batch_size, shuffle=False, **kwargs)
 
     net = densenet.DenseNet(growthRate=12, depth=100, reduction=0.5,
                             bottleneck=True, nClasses=10)
+    criterion = nn.CrossEntropyLoss()
 
     print('  + Number of params: {}'.format(
         sum([p.data.nelement() for p in net.parameters()])))
     if args.cuda:
-        net = net.cuda()
+        net = torch.nn.DataParallel(net).cuda()
+        criterion = criterion.cuda()
 
     if args.opt == 'sgd':
         optimizer = optim.SGD(net.parameters(), lr=1e-1,
@@ -86,67 +91,83 @@ def main():
     elif args.opt == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters(), weight_decay=1e-4)
 
-    trainF = open(os.path.join(args.save, 'train.csv'), 'w')
-    testF = open(os.path.join(args.save, 'test.csv'), 'w')
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print("=> loading checkpoint '{}'".format(args.resume))
+            checkpoint = torch.load(args.resume)
+            args.start_epoch = checkpoint['epoch']
+            best_acc = checkpoint['best_acc']
+            net.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            print("=> loaded checkpoint '{}' (epoch {})"
+                  .format(args.resume, checkpoint['epoch']))
+        else:
+            print("=> no checkpoint found at '{}'".format(args.resume))
+
+    if args.evaluate:
+        test(args, args.start_epoch, net, testLoader, optimizer, criterion, evaluate=True)
+        return
+
 
     for epoch in range(1, args.nEpochs + 1):
         adjust_opt(args.opt, optimizer, epoch)
-        train(args, epoch, net, trainLoader, optimizer, trainF)
-        test(args, epoch, net, testLoader, optimizer, testF)
-        torch.save(net, os.path.join(args.save, 'latest.pth'))
-        os.system('./plot.py {} &'.format(args.save))
+        train(args, epoch, net, trainLoader, optimizer, criterion)
+        test(args, epoch, net, testLoader, optimizer, criterion)
 
-    trainF.close()
-    testF.close()
-
-def train(args, epoch, net, trainLoader, optimizer, trainF):
-    net.train()
-    nProcessed = 0
-    nTrain = len(trainLoader.dataset)
-    for batch_idx, (data, target) in enumerate(trainLoader):
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+def train(args, epoch, model, trainloader, optimizer, criterion):
+    model.train()
+    loss_avg = 0.0
+    for batch_idx, (data, target) in enumerate(trainloader):
+        data, target = Variable(data.cuda()), Variable(target.cuda())
         optimizer.zero_grad()
-        output = net(data)
-        loss = F.nll_loss(output, target)
+        output = model(data)
+        loss = criterion(output, target)
+        loss_avg += loss
         loss.backward()
         optimizer.step()
-        nProcessed += len(data)
-        pred = output.data.max(1)[1] # get the index of the max log-probability
-        incorrect = pred.ne(target.data).cpu().sum()
-        err = 100.*incorrect/len(data)
-        partialEpoch = epoch + float(batch_idx) / len(trainLoader) - 1
-        if batch_idx % 10 == 0:
-            print('Train Epoch: {:.2f} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tError: {:.6f}'.format(
-                partialEpoch, nProcessed, nTrain, 100. * batch_idx / len(trainLoader),
-                loss.data.item(), err))
+        if batch_idx % 50 == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(trainloader.dataset),
+                100. * batch_idx / len(trainloader), loss.data.item()))
+    loss_avg /= len(trainloader.dataset)
+    print('Avg train loss: {:.4f}'.format(loss_avg * args.batch_size))
 
-        trainF.write('{},{},{}\n'.format(partialEpoch, loss.data.item(), err))
-        trainF.flush()
-
-def test(args, epoch, net, testLoader, optimizer, testF):
-    net.eval()
+def test(args, epoch, model, testloader, optimizer, criterion, evaluate=False):
+    global best_acc
+    model.eval()
     test_loss = 0
-    incorrect = 0
-    for data, target in testLoader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
-        output = net(data)
-        test_loss += F.nll_loss(output, target).data.item()
-        pred = output.data.max(1)[1] # get the index of the max log-probability
-        incorrect += pred.ne(target.data).cpu().sum()
+    correct = 0
+    for data, target in testloader:
+        data, target = Variable(data.cuda()), Variable(target.cuda())
+        output = model(data)
+        test_loss += criterion(output, target).data.item()
+        pred = output.data.max(1, keepdim=True)[1]
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-    test_loss = test_loss
-    test_loss /= len(testLoader) # loss function already averages over batch size
-    nTotal = len(testLoader.dataset)
-    err = 100.*incorrect/nTotal
-    print('\nTest set: Average loss: {:.4f}, Error: {}/{} ({:.0f}%)\n'.format(
-        test_loss, incorrect, nTotal, err))
+    acc = 100. * float(correct) / len(testloader.dataset)
+    if acc > best_acc:
+        best_acc = acc
+        if not evaluate:
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'best_acc': best_acc,
+                'optimizer' : optimizer.state_dict(),
+            }, is_best=True)
 
-    testF.write('{},{},{}\n'.format(epoch, test_loss, err))
-    testF.flush()
+    test_loss /= len(testloader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        test_loss * args.batch_size, correct, len(testloader.dataset),
+        100. * float(correct) / len(testloader.dataset)))
+    print('Best Accuracy: {:.2f}%\n'.format(best_acc))
+
+def save_checkpoint(state, is_best):
+    filename='saved_models/checkpoint.pth.tar'
+    subprocess.call('mkdir saved_models -p', shell=True)
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'saved_models/model_best.pth.tar')
+    return
 
 def adjust_opt(optAlg, optimizer, epoch):
     if optAlg == 'sgd':

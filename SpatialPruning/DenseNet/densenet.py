@@ -94,6 +94,8 @@ class DenseNet(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
+                n = m.weight.data.shape[1]
+                m.weight.data.normal_(0, math.sqrt(2. / n))
                 m.bias.data.zero_()
 
     def _make_dense(self, nChannels, growthRate, nDenseBlocks, bottleneck):
@@ -112,5 +114,6 @@ class DenseNet(nn.Module):
         out = self.trans2(self.dense2(out))
         out = self.dense3(out)
         out = torch.squeeze(F.avg_pool2d(F.relu(self.bn1(out)), 8))
-        out = F.log_softmax(self.fc(out))
+        # out = F.log_softmax(self.fc(out))
+        out = self.fc(out)
         return out
