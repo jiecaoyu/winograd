@@ -13,7 +13,7 @@ import pickle
 class Mask():
     def __init__(self, model, threshold_multi=0.0,
             prune_list=None, winograd_structured=False, winograd_domain=False,
-            percentage=0.0, generate_mask=False):
+            percentage=0.0, generate_mask=False, threshold_list=None):
         '''
         initialize the mask
         '''
@@ -25,7 +25,9 @@ class Mask():
         self.percentage = percentage
         if not winograd_domain:
             if self.percentage == 0.0:
-                self.mask_list = self.mask_winograd_structured(model, threshold_multi, prune_list)
+                self.mask_list =\
+                        self.mask_winograd_structured(model, threshold_multi,
+                                prune_list, threshold_list)
             else:
                 self.mask_list =\
                         self.mask_winograd_structured_percentage(model, percentage, prune_list)
@@ -41,7 +43,8 @@ class Mask():
             self.print_mask_info_winograd()
         return
 
-    def mask_winograd_structured(self, model, threshold_multi, prune_list):
+    def mask_winograd_structured(self, model, threshold_multi,
+            prune_list, threshold_list):
         '''
         generate mask for normal weights but structured for winograd domain
         '''
@@ -51,7 +54,10 @@ class Mask():
         for m in model.modules():
             if isinstance(m, nn.Conv2d):
                 if count in prune_list:
-                    threshold = para.resnet18_threshold_dict[count] * threshold_multi
+                    if threshold_list:
+                        threshold = threshold_list[count] * threshold_multi
+                    else:
+                        threshold = para.resnet18_threshold_dict[count] * threshold_multi
                     tmp_weight = m.weight.data.abs()
                     tmp_mask = tmp_weight.lt(-1.0)
                     if tmp_weight.shape[2] == 5:
