@@ -325,17 +325,23 @@ if __name__=='__main__':
                     break
         else:
             prune_list = [int(x) for x in args.target.split(',')]
-            thresholds = [float(x) for x in args.thresholds.split(',')]
-            if len(prune_list) != len(thresholds):
-                raise Exception ('prune_list and threshold_list should have the same size')
-            threshold_list = {}
-            for index in range(len(prune_list)):
-                threshold_list[prune_list[index]] = thresholds[index]
-            mask = utils.mask.Mask(model,
-                    prune_list=prune_list,
-                    winograd_structured=args.winograd_structured,
-                    threshold_multi=args.threshold_multi,
-                    threshold_list=threshold_list)
+            if args.thresholds != '':
+                thresholds = [float(x) for x in args.thresholds.split(',')]
+                if len(prune_list) != len(thresholds):
+                    raise Exception ('prune_list and threshold_list should have the same size')
+                threshold_list = {}
+                for index in range(len(prune_list)):
+                    threshold_list[prune_list[index]] = thresholds[index]
+                mask = utils.mask.Mask(model,
+                        prune_list=prune_list,
+                        winograd_structured=args.winograd_structured,
+                        threshold_multi=args.threshold_multi,
+                        threshold_list=threshold_list)
+            else:
+                mask = utils.mask.Mask(model,
+                        prune_list=prune_list,
+                        winograd_structured=args.winograd_structured,
+                        percentage=args.percentage)
         mask.print_mask_info()
         mask.print_mask_info_winograd()
     else:
