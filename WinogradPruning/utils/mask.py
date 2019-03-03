@@ -13,7 +13,7 @@ import pickle
 class Mask():
     def __init__(self, model, threshold_multi=0.0,
             prune_list=None, winograd_structured=False, winograd_domain=False,
-            percentage=0.0, generate_mask=False):
+            percentage=0.0, generate_mask=False, threshold_list=None):
         '''
         initialize the mask
         '''
@@ -27,13 +27,13 @@ class Mask():
             raise Exception ('Here only winograd pruning is supported')
         else:
             if self.percentage == 0.0:
-                self.mask_list = self.mask_winograd_domain(model, threshold_multi, prune_list)
+                self.mask_list = self.mask_winograd_domain(model, threshold_multi, prune_list, threshold_list)
             else:
                 self.mask_list = self.mask_winograd_domain_percentage(model, percentage, prune_list)
         self.print_mask_info()
         return
 
-    def mask_winograd_domain(self, model, threshold_multi, prune_list):
+    def mask_winograd_domain(self, model, threshold_multi, prune_list, threshold_list):
         '''
         generate mask for pruning in winograd domain
         '''
@@ -43,7 +43,10 @@ class Mask():
         for m in model.modules():
             if isinstance(m, nn.Conv2d) or isinstance(m, newLayers.Winograd2d.Winograd2d):
                 if (count in prune_list) and isinstance(m, newLayers.Winograd2d.Winograd2d):
-                    threshold = para.resnet18_threshold_dict_winograd[count] * threshold_multi
+                    if threshold_list == None:
+                        threshold = para.resnet18_threshold_dict_winograd[count] * threshold_multi
+                    else:
+                        threshold = threshold_list[count] * threshold_multi
                     print(threshold)
                     if m.kernel_size == 5:
                         threshold_tensor = torch.from_numpy(para.mask_multi_4x4_5x5).float()

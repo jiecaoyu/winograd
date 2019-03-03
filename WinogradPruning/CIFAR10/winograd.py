@@ -195,6 +195,12 @@ if __name__=='__main__':
             help='weight_decay power')
     parser.add_argument('--wd-count', type=int, default=3,
             help='weight_decay count')
+    parser.add_argument('--target', action='store', default=None,
+            help='pruning target')
+    parser.add_argument('--thresholds', action='store', default='',
+            help='thresholds for targeting layers')
+    parser.add_argument('--threshold-multi', type=float, default=0.0,
+            help='pruning threshold-multi')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -294,49 +300,69 @@ if __name__=='__main__':
         #         if count >= args.wd_count:
         #             break
         # print(model)
-        mask = utils.mask.Mask(model,
-                prune_list=[1,2,3,4,5,6,7],
-                winograd_domain=True,
-                percentage=args.percentage)
-        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
-        mask.prune_list.insert(0, 0)
-        for m in model.modules():
-            if isinstance(m, newLayers.Winograd2d.Winograd2d):
-                left = 0.0
-                right = m.weight.data.abs().max()
-                tmp_percentage = -1.0
-                count_limit = 100
-                while True:
-                    threshold = (left + right) / 2.0
-                    tmp_weight = m.weight.data.abs()
-                    tmp_mask = tmp_weight.lt(-1.0)
-                    if m.kernel_size == 5:
-                        threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_5x5).float()
-                    elif m.kernel_size == 3:
-                        threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_3x3).float()
-                    else:
-                        raise Exception ('kernel_size currently not supported')
-                    if m.weight.data.is_cuda:
-                        threshold_tensor = threshold_tensor.cuda()
-                    threshold_tensor = threshold_tensor / threshold_tensor.min()
-                    tmp_mask = m.weight.data.clone().abs()\
-                            .lt(threshold_tensor.pow(-1.0).mul(threshold)).float()
-                    pruned = tmp_mask.sum()
-                    total = tmp_mask.nelement()
-                    tmp_percentage = float(pruned) / total
-                    percentage = 0.2
-                    if abs(percentage - tmp_percentage) < 0.0001:
-                        break
-                    elif tmp_percentage > percentage:
-                        right = threshold
-                    else:
-                        left = threshold
-                    print(tmp_percentage)
-                    count_limit -= 1
-                    if count_limit < 0:
-                        break
-                mask.mask_list[0] = tmp_mask.float()
-                break
+        if not args.target:
+            mask = utils.mask.Mask(model,
+                    prune_list=[1,2,3,4,5,6,7],
+                    winograd_domain=True,
+                    percentage=args.percentage)
+            print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
+            mask.prune_list.insert(0, 0)
+            for m in model.modules():
+                if isinstance(m, newLayers.Winograd2d.Winograd2d):
+                    left = 0.0
+                    right = m.weight.data.abs().max()
+                    tmp_percentage = -1.0
+                    count_limit = 100
+                    while True:
+                        threshold = (left + right) / 2.0
+                        tmp_weight = m.weight.data.abs()
+                        tmp_mask = tmp_weight.lt(-1.0)
+                        if m.kernel_size == 5:
+                            threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_5x5).float()
+                        elif m.kernel_size == 3:
+                            threshold_tensor = torch.from_numpy(utils.para.mask_multi_4x4_3x3).float()
+                        else:
+                            raise Exception ('kernel_size currently not supported')
+                        if m.weight.data.is_cuda:
+                            threshold_tensor = threshold_tensor.cuda()
+                        threshold_tensor = threshold_tensor / threshold_tensor.min()
+                        tmp_mask = m.weight.data.clone().abs()\
+                                .lt(threshold_tensor.pow(-1.0).mul(threshold)).float()
+                        pruned = tmp_mask.sum()
+                        total = tmp_mask.nelement()
+                        tmp_percentage = float(pruned) / total
+                        percentage = 0.2
+                        if abs(percentage - tmp_percentage) < 0.0001:
+                            break
+                        elif tmp_percentage > percentage:
+                            right = threshold
+                        else:
+                            left = threshold
+                        print(tmp_percentage)
+                        count_limit -= 1
+                        if count_limit < 0:
+                            break
+                    mask.mask_list[0] = tmp_mask.float()
+                    break
+        else:
+            prune_list = [int(x) for x in args.target.split(',')]
+            if args.thresholds != '':
+                thresholds = [float(x) for x in args.thresholds.split(',')]
+                if len(prune_list) != len(thresholds):
+                    raise Exception ('prune_list and threshold_list should have the same size')
+                threshold_list = {}
+                for index in range(len(prune_list)):
+                    threshold_list[prune_list[index]] = thresholds[index]
+                mask = utils.mask.Mask(model,
+                        prune_list=prune_list,
+                        winograd_domain=True,
+                        threshold_multi=args.threshold_multi,
+                        threshold_list=threshold_list)
+            else:
+                mask = utils.mask.Mask(model,
+                        prune_list=[1,2,3,4,5,6,7],
+                        winograd_domain=True,
+                        percentage=args.percentage)
         mask.print_mask_info()
     else:
         mask = None
