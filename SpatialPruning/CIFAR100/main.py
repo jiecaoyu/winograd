@@ -175,7 +175,7 @@ if __name__=='__main__':
             train=True,
             download=True,
             transform=transforms.Compose([
-                transforms.RandomCrop(32, padding=5),
+                transforms.RandomCrop(32, padding=6),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
