@@ -59,6 +59,17 @@ class conv_pool_cnn_c(nn.Module):
                 nn.AvgPool2d(kernel_size=8, stride=1, padding=0),
 
                 )
+        self._initialize()
+
+    def _initialize(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.weight.data[0].nelement()
+                m.weight.data.normal_(0, 0.5 / (n ** 0.5))
+                m.bias.data.fill_(0.0)
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1.0)
+                m.bias.data.fill_(0.0)
 
     def forward(self, x):
         x = self.classifer(x)

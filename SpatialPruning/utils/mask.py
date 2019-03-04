@@ -40,6 +40,7 @@ class Mask():
             raise Exception('Winograd-domain pruning is not supported here')
         self.print_mask_info()
         if not winograd_domain:
+            self.mask_info_winograd_list = {}
             self.print_mask_info_winograd()
         return
 
@@ -248,6 +249,7 @@ class Mask():
                         weights_total += total
                     print('CONV {} : {:8d}/{:8d} -- {:.4f}'\
                             .format(count, int(pruned), total, float(pruned) / total))
+                    self.mask_info_winograd_list[count] = float(pruned) / total
                     del tmp_weight
                 else:
                     print('CONV ' + str(count) + ' : not pruned')

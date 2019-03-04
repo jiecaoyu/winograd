@@ -104,7 +104,7 @@ def test(evaluate=False):
 
 def adjust_learning_rate(optimizer, epoch):
     if args.prune:
-        S = [50, 100, 150]
+        S = [100, 150]
     else:
         S = [200, 250, 300]
     if epoch in S:
@@ -150,6 +150,16 @@ if __name__=='__main__':
             help='enable winograd-driven structured pruning')
     parser.add_argument('--percentage', type=float, default=0.0,
             help='pruning percentage')
+    parser.add_argument('--wd-power', type=float, default=0.1,
+            help='weight_decay power')
+    parser.add_argument('--wd-count', type=int, default=3,
+            help='weight_decay count')
+    parser.add_argument('--target', action='store', default=None,
+            help='pruning target')
+    parser.add_argument('--thresholds', action='store', default='',
+            help='thresholds for targeting layers')
+    parser.add_argument('--threshold-multi', type=float, default=0.0,
+            help='pruning threshold-multi')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -221,86 +231,110 @@ if __name__=='__main__':
     
     if args.prune:
         assert(args.winograd_structured), 'Please trun on --winograd-structured'
-        mask = utils.mask.Mask(model,
-                prune_list=[1,2,3,4,5,6],
-                winograd_structured=args.winograd_structured,
-                percentage=args.percentage)
-        count = 0
-        for m in model.modules():
-            if isinstance(m, nn.Dropout):
-                if count == 0:
-                    m.p *= ((1. - 0.2) ** 0.75)
-                else:
-                    m.p *= ((1. - args.percentage) ** 0.75)
-                count += 1
-        print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
-        mask.prune_list.insert(0, 0)
-        for m in model.modules():
-            if isinstance(m, nn.Conv2d):
-                left = 0.0
-                right = m.weight.data.abs().max()
-                tmp_percentage = -1.0
-                while True:
-                    threshold = (left + right) / 2.0
-                    tmp_weight = m.weight.data.abs()
-                    tmp_mask = tmp_weight.lt(-1.0)
-                    if tmp_weight.shape[2] == 5:
-                        S = torch.from_numpy(utils.para.S_4x4_5x5).float()
-                    elif tmp_weight.shape[2] == 3:
-                        S = torch.from_numpy(utils.para.S_4x4_3x3).float()
+        if not args.target:
+            mask = utils.mask.Mask(model,
+                    prune_list=[1,2,3,4,5,6],
+                    winograd_structured=args.winograd_structured,
+                    percentage=args.percentage)
+            count = 0
+            for m in model.modules():
+                if isinstance(m, nn.Dropout):
+                    if count == 0:
+                        m.p *= ((1. - 0.2) ** 0.75)
                     else:
-                        raise Exception ('The kernel size is not supported.')
-                    if tmp_weight.is_cuda:
-                        S = S.cuda()
-                    for i in range(S.shape[0]):
-                        S_piece = S[i].view(tmp_weight.shape[2],
-                                tmp_weight.shape[2])
-                        mask_piece = S_piece.abs().gt(0.0)
-                        tmp_weight_masked = tmp_weight.mul(
-                                mask_piece.unsqueeze(0).unsqueeze(0).float())
-                        tmp_weight_masked = tmp_weight_masked.view(
-                                tmp_weight_masked.shape[0],
-                                tmp_weight_masked.shape[1],
-                                -1)
-                        tmp_weight_masked,_ = torch.max(
-                                tmp_weight_masked, dim=2)
-                        tmp_weight_masked = tmp_weight_masked.lt(threshold)
-                        mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
-                                .mul(mask_piece.unsqueeze(0).unsqueeze(1))
-                        tmp_mask = tmp_mask | mask_piece
+                        m.p *= ((1. - args.percentage) ** 0.75)
+                    count += 1
+            print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
+            mask.prune_list.insert(0, 0)
+            for m in model.modules():
+                if isinstance(m, nn.Conv2d):
+                    left = 0.0
+                    right = m.weight.data.abs().max()
+                    tmp_percentage = -1.0
+                    while True:
+                        threshold = (left + right) / 2.0
+                        tmp_weight = m.weight.data.abs()
+                        tmp_mask = tmp_weight.lt(-1.0)
+                        if tmp_weight.shape[2] == 5:
+                            S = torch.from_numpy(utils.para.S_4x4_5x5).float()
+                        elif tmp_weight.shape[2] == 3:
+                            S = torch.from_numpy(utils.para.S_4x4_3x3).float()
+                        else:
+                            raise Exception ('The kernel size is not supported.')
+                        if tmp_weight.is_cuda:
+                            S = S.cuda()
+                        for i in range(S.shape[0]):
+                            S_piece = S[i].view(tmp_weight.shape[2],
+                                    tmp_weight.shape[2])
+                            mask_piece = S_piece.abs().gt(0.0)
+                            tmp_weight_masked = tmp_weight.mul(
+                                    mask_piece.unsqueeze(0).unsqueeze(0).float())
+                            tmp_weight_masked = tmp_weight_masked.view(
+                                    tmp_weight_masked.shape[0],
+                                    tmp_weight_masked.shape[1],
+                                    -1)
+                            tmp_weight_masked,_ = torch.max(
+                                    tmp_weight_masked, dim=2)
+                            tmp_weight_masked = tmp_weight_masked.lt(threshold)
+                            mask_piece = tmp_weight_masked.unsqueeze(2).unsqueeze(3)\
+                                    .mul(mask_piece.unsqueeze(0).unsqueeze(1))
+                            tmp_mask = tmp_mask | mask_piece
 
-                    # test winograd sparsity
-                    tmp_weight = m.weight.data.clone()
-                    tmp_weight = tmp_weight.mul(1.0 - tmp_mask.float())
-                    if tmp_weight.shape[2] == 5:
-                        G = torch.from_numpy(utils.para.G_4x4_5x5).float()
-                    elif tmp_weight.shape[2] == 3:
-                        G = torch.from_numpy(utils.para.G_4x4_3x3).float()
-                    else:
-                        raise Exception ('The kernel size is not supported.')
-                    tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])
-                    if tmp_weight.is_cuda:
-                        G = G.cuda()
-                    tmp_weight_t = torch.bmm(
-                            G.unsqueeze(0).expand(tmp_weight.size(0), *G.size()), tmp_weight)
-                    GT = G.transpose(0, 1)
-                    tmp_weight_t = torch.bmm(
-                            tmp_weight_t,
-                            GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
-                    pruned = tmp_weight_t.eq(0.0).sum()
-                    total = tmp_weight_t.nelement()
-                    del tmp_weight
-                    tmp_percentage = float(pruned) / total
-                    percentage = 0.2
-                    if abs(percentage - tmp_percentage) < 0.0001:
-                        break
-                    elif tmp_percentage > percentage:
-                        right = threshold
-                    else:
-                        left = threshold
-                    print(tmp_percentage)
-                mask.mask_list[0] = tmp_mask.float()
-                break
+                        # test winograd sparsity
+                        tmp_weight = m.weight.data.clone()
+                        tmp_weight = tmp_weight.mul(1.0 - tmp_mask.float())
+                        if tmp_weight.shape[2] == 5:
+                            G = torch.from_numpy(utils.para.G_4x4_5x5).float()
+                        elif tmp_weight.shape[2] == 3:
+                            G = torch.from_numpy(utils.para.G_4x4_3x3).float()
+                        else:
+                            raise Exception ('The kernel size is not supported.')
+                        tmp_weight = tmp_weight.view(-1, tmp_weight.shape[2], tmp_weight.shape[3])
+                        if tmp_weight.is_cuda:
+                            G = G.cuda()
+                        tmp_weight_t = torch.bmm(
+                                G.unsqueeze(0).expand(tmp_weight.size(0), *G.size()), tmp_weight)
+                        GT = G.transpose(0, 1)
+                        tmp_weight_t = torch.bmm(
+                                tmp_weight_t,
+                                GT.unsqueeze(0).expand(tmp_weight_t.size(0), *GT.size()))
+                        pruned = tmp_weight_t.eq(0.0).sum()
+                        total = tmp_weight_t.nelement()
+                        del tmp_weight
+                        tmp_percentage = float(pruned) / total
+                        percentage = 0.2
+                        if abs(percentage - tmp_percentage) < 0.0001:
+                            break
+                        elif tmp_percentage > percentage:
+                            right = threshold
+                        else:
+                            left = threshold
+                        print(tmp_percentage)
+                    mask.mask_list[0] = tmp_mask.float()
+                    break
+        else:
+            prune_list = [int(x) for x in args.target.split(',')]
+            if args.thresholds != '':
+                thresholds = [float(x) for x in args.thresholds.split(',')]
+                if len(prune_list) != len(thresholds):
+                    raise Exception ('prune_list and threshold_list should have the same size')
+                threshold_list = {}
+                for index in range(len(prune_list)):
+                    threshold_list[prune_list[index]] = thresholds[index]
+                mask = utils.mask.Mask(model,
+                        prune_list=prune_list,
+                        winograd_structured=args.winograd_structured,
+                        threshold_multi=args.threshold_multi,
+                        threshold_list=threshold_list)
+            else:
+                mask = utils.mask.Mask(model,
+                        prune_list=prune_list,
+                        winograd_structured=args.winograd_structured,
+                        percentage=args.percentage)
+            # adjust dropout
+            percentage_tmp = mask.mask_info_winograd_list[6]
+            model.module.classifer[22].p *= ((1. - percentage_tmp) ** 0.25)
+            print(model.module.classifer[22].p)
         mask.print_mask_info()
         mask.print_mask_info_winograd()
     else:
