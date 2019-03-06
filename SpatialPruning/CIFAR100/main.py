@@ -106,7 +106,7 @@ def adjust_learning_rate(optimizer, epoch):
     if args.prune:
         S = [100, 150]
     else:
-        S = [200, 250, 300]
+        S = [200, 350, 500]
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
@@ -118,8 +118,8 @@ if __name__=='__main__':
             help='input batch size for training (default: 100)')
     parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
             help='input batch size for testing (default: 100)')
-    parser.add_argument('--epochs', type=int, default=350, metavar='N',
-            help='number of epochs to train (default: 350)')
+    parser.add_argument('--epochs', type=int, default=600, metavar='N',
+            help='number of epochs to train (default: 600)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
@@ -175,7 +175,7 @@ if __name__=='__main__':
             train=True,
             download=True,
             transform=transforms.Compose([
-                transforms.RandomCrop(32, padding=6),
+                transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
@@ -332,9 +332,13 @@ if __name__=='__main__':
                         winograd_structured=args.winograd_structured,
                         percentage=args.percentage)
             # adjust dropout
-            percentage_tmp = mask.mask_info_winograd_list[6]
-            model.module.classifer[22].p *= ((1. - percentage_tmp) ** 0.25)
-            print(model.module.classifer[22].p)
+            if 3 in mask.mask_info_winograd_list.keys():
+                percentage_tmp = mask.mask_info_winograd_list[3]
+                model.module.classifer[11].p *= ((1. - percentage_tmp) ** 0.75)
+            if 6 in mask.mask_info_winograd_list.keys():
+                percentage_tmp = mask.mask_info_winograd_list[6]
+                model.module.classifer[22].p *= ((1. - percentage_tmp) ** 0.75)
+        print(model)
         mask.print_mask_info()
         mask.print_mask_info_winograd()
     else:

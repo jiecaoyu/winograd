@@ -17,41 +17,41 @@ class conv_pool_cnn_c(nn.Module):
         self.classifer = nn.Sequential(
                 nn.Dropout(0.2),
                 nn.Conv2d(3, 96, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(96),
+                nn.BatchNorm2d(96, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(96),
+                nn.BatchNorm2d(96, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(96,  96, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(96),
+                nn.BatchNorm2d(96, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.Dropout(0.5),
 
                 nn.Conv2d(96, 192, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(192),
+                nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(192),
+                nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(192),
+                nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.Dropout(0.5),
 
                 nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
-                nn.BatchNorm2d(192),
+                nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(192, 192, kernel_size=1, stride=1, padding=0),
-                nn.BatchNorm2d(192),
+                nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
                 nn.Conv2d(192,  100, kernel_size=1, stride=1, padding=0),
