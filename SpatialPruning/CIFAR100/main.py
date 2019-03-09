@@ -66,7 +66,7 @@ def train(epoch):
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
-        loss_avg += loss
+        loss_avg += float(loss)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -104,9 +104,9 @@ def test(evaluate=False):
 
 def adjust_learning_rate(optimizer, epoch):
     if args.prune:
-        S = [100, 150]
+        S = [50, 100]
     else:
-        S = [200, 350, 500]
+        S = [200, 250, 300]
     if epoch in S:
         for param_group in optimizer.param_groups:
             param_group['lr'] = param_group['lr'] * 0.1
@@ -118,16 +118,16 @@ if __name__=='__main__':
             help='input batch size for training (default: 100)')
     parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
             help='input batch size for testing (default: 100)')
-    parser.add_argument('--epochs', type=int, default=600, metavar='N',
-            help='number of epochs to train (default: 600)')
+    parser.add_argument('--epochs', type=int, default=350, metavar='N',
+            help='number of epochs to train (default: 350)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
     parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
             help='learning rate (default: 0.05)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
-            metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
+            metavar='W', help='weight decay (default: 1e-3)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -242,7 +242,7 @@ if __name__=='__main__':
                     if count == 0:
                         m.p *= ((1. - 0.2) ** 0.75)
                     else:
-                        m.p *= ((1. - args.percentage) ** 0.75)
+                        m.p *= ((1. - args.percentage) ** 0.00)
                     count += 1
             print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
             mask.prune_list.insert(0, 0)
@@ -251,6 +251,7 @@ if __name__=='__main__':
                     left = 0.0
                     right = m.weight.data.abs().max()
                     tmp_percentage = -1.0
+                    count_limit = 100
                     while True:
                         threshold = (left + right) / 2.0
                         tmp_weight = m.weight.data.abs()
@@ -309,6 +310,9 @@ if __name__=='__main__':
                             right = threshold
                         else:
                             left = threshold
+                        count_limit -= 1
+                        if count_limit < 0:
+                            break
                         print(tmp_percentage)
                     mask.mask_list[0] = tmp_mask.float()
                     break
@@ -334,10 +338,10 @@ if __name__=='__main__':
             # adjust dropout
             if 3 in mask.mask_info_winograd_list.keys():
                 percentage_tmp = mask.mask_info_winograd_list[3]
-                model.module.classifer[11].p *= ((1. - percentage_tmp) ** 0.75)
+                model.module.classifer[11].p *= ((1. - percentage_tmp) ** 0.)
             if 6 in mask.mask_info_winograd_list.keys():
                 percentage_tmp = mask.mask_info_winograd_list[6]
-                model.module.classifer[22].p *= ((1. - percentage_tmp) ** 0.75)
+                model.module.classifer[22].p *= ((1. - percentage_tmp) ** 0.)
         print(model)
         mask.print_mask_info()
         mask.print_mask_info_winograd()

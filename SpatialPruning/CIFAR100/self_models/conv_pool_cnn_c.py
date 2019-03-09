@@ -46,7 +46,7 @@ class conv_pool_cnn_c(nn.Module):
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.Dropout(0.5),
 
-                nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(192, 192, kernel_size=3, stride=1, padding=0),
                 nn.BatchNorm2d(192, momentum=0.003),
                 nn.ReLU(inplace=True),
 
@@ -56,7 +56,7 @@ class conv_pool_cnn_c(nn.Module):
 
                 nn.Conv2d(192,  100, kernel_size=1, stride=1, padding=0),
                 nn.ReLU(inplace=True),
-                nn.AvgPool2d(kernel_size=8, stride=1, padding=0),
+                nn.AvgPool2d(kernel_size=6, stride=1, padding=0),
 
                 )
         self._initialize()
