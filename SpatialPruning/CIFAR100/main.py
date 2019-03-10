@@ -240,7 +240,7 @@ if __name__=='__main__':
             for m in model.modules():
                 if isinstance(m, nn.Dropout):
                     if count == 0:
-                        m.p *= ((1. - 0.2) ** 0.75)
+                        m.p *= ((1. - args.percentage) ** 0.75)
                     else:
                         m.p *= ((1. - args.percentage) ** 0.00)
                     count += 1
