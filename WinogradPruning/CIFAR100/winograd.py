@@ -166,8 +166,8 @@ if __name__=='__main__':
             help='learning rate (default: 0.05)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
-            metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
+            metavar='W', help='weight decay (default: 1e-3)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
             help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -203,7 +203,7 @@ if __name__=='__main__':
 
     normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
     train_dataset = torchvision.datasets.CIFAR100(
-            root='./data',
+            root='./../../SpatialPruning/CIFAR100/data',
             train=True,
             download=True,
             transform=transforms.Compose([
@@ -220,7 +220,7 @@ if __name__=='__main__':
             num_workers=16)
     
     test_dataset = torchvision.datasets.CIFAR100(
-            root='./data',
+            root='./../../SpatialPruning/CIFAR100/data',
             train=False,
             download=True,
             transform=transforms.Compose([
@@ -275,9 +275,9 @@ if __name__=='__main__':
         for m in model.modules():
             if isinstance(m, nn.Dropout):
                 if count == 0:
-                    m.p *= ((1. - 0.2) ** 0.75)
-                else:
                     m.p *= ((1. - args.percentage) ** 0.75)
+                else:
+                    m.p *= ((1. - args.percentage) ** 0.00)
                 count += 1
         
         print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
