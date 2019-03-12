@@ -242,7 +242,7 @@ if __name__=='__main__':
                     if count == 0:
                         m.p *= ((1. - args.percentage) ** 0.75)
                     else:
-                        m.p *= ((1. - args.percentage) ** 0.00)
+                        m.p *= ((1. - args.percentage) ** 0.15)
                     count += 1
             print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
             mask.prune_list.insert(0, 0)

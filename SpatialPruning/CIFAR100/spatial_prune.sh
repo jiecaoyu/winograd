@@ -19,3 +19,5 @@ python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.6.pth.tar     --
 python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.7.pth.tar     --winograd-structured --prune --percentage 0.80 --lr 0.005 --epochs 150 --stage 8 &> step8
 
 python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.8.pth.tar     --winograd-structured --prune --percentage 0.85 --lr 0.005 --epochs 150 --stage 9 &> step9
+
+python main.py  --pretrained saved_models/conv_pool_cnn_c.prune.9.pth.tar     --winograd-structured --prune --percentage 0.90 --lr 0.005 --epochs 150 --stage 10 &> step10
