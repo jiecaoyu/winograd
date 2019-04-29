@@ -34,7 +34,7 @@ def save_state(model, acc):
         'acc': acc,
         'state_dict': model.state_dict(),
         }
-    for key in state['state_dict'].keys():
+    for key in list(state['state_dict'].keys()):
         if 'module' in key:
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
@@ -113,6 +113,7 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(trainloader.dataset),
                 len(data) * batch_idx / len(trainloader), loss.data.item()))
+            sys.stdout.flush()
     loss_avg /= len(trainloader.dataset)
     print('Avg train loss: {:.4f}'.format(loss_avg * args.batch_size))
 
@@ -275,9 +276,9 @@ if __name__=='__main__':
         for m in model.modules():
             if isinstance(m, nn.Dropout):
                 if count == 0:
-                    m.p *= ((1. - args.percentage) ** 0.75)
+                    m.p *= (((1. - 0.2) * 0.7) ** 0.5)
                 else:
-                    m.p *= ((1. - args.percentage) ** 0.15)
+                    m.p *= (((1. - args.percentage) * 0.7) ** 0.5)
                 count += 1
         
         print('Insert sparsity into the first layer with fixed sparsity of 20% ...')

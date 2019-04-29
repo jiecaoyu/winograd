@@ -33,7 +33,7 @@ def save_state(model, acc):
         'acc': acc,
         'state_dict': model.state_dict(),
         }
-    for key in state['state_dict'].keys():
+    for key in list(state['state_dict'].keys()):
         if 'module' in key:
             state['state_dict'][key.replace('module.', '')] = \
                     state['state_dict'].pop(key)
@@ -73,6 +73,7 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(trainloader.dataset),
                 len(data) * batch_idx / len(trainloader), loss.data.item()))
+            sys.stdout.flush()
     loss_avg /= len(trainloader.dataset)
     print('Avg train loss: {:.4f}'.format(loss_avg * args.batch_size))
 
@@ -122,8 +123,8 @@ if __name__=='__main__':
             help='number of epochs to train (default: 350)')
     parser.add_argument('--lr-epochs', type=int, default=0, metavar='N',
             help='number of epochs to decay the lr (default: 0)')
-    parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
-            help='learning rate (default: 0.05)')
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+            help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
             help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', '--wd', default=1e-3, type=float,
@@ -240,9 +241,9 @@ if __name__=='__main__':
             for m in model.modules():
                 if isinstance(m, nn.Dropout):
                     if count == 0:
-                        m.p *= ((1. - args.percentage) ** 0.75)
+                        m.p *= (((1. - 0.2) * 0.7) ** 0.5)
                     else:
-                        m.p *= ((1. - args.percentage) ** 0.15)
+                        m.p *= (((1. - args.percentage) * 0.7) ** 0.5)
                     count += 1
             print('Insert sparsity into the first layer with fixed sparsity of 20% ...')
             mask.prune_list.insert(0, 0)

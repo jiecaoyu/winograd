@@ -77,6 +77,7 @@ class Mask():
                     left = 0.0
                     right = m.weight.data.abs().max()
                     tmp_percentage = -1.0
+                    count_limit = 100
                     while True:
                         threshold = (left + right) / 2.0
                         tmp_weight = m.weight.data.abs()
@@ -102,6 +103,9 @@ class Mask():
                         else:
                             left = threshold
                         print(tmp_percentage)
+                        count_limit -= 1
+                        if count_limit < 0:
+                            break
                     mask_list[count] = tmp_mask
                     self.threshold_list[count] = threshold
                 count += 1
