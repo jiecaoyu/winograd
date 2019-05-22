@@ -126,6 +126,7 @@ def generate_data(target_dir):
     write_data(target_dir + '/input_img', single_input.shape, numpy.int32)
     write_data(target_dir + '/input_img', single_input, numpy.float32)
     output = model(single_input.unsqueeze(0))
+    print(output.sum())
     return
 
 def generate_model_para(model, target_dir):
